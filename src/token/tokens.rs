@@ -1,7 +1,9 @@
 pub mod whitespace_token {
+    pub use self::whitespace::Whitespace;
+
     use konst::try_opt;
 
-    use crate::parse::{filtered::Filtered, whitespace::Whitespace};
+    use crate::input::Filtered;
 
     #[derive(Debug, Clone, Copy)]
     pub struct WhitespaceToken<'a>(&'a str);
@@ -21,18 +23,44 @@ pub mod whitespace_token {
             (v, new_stream)
         }
     }
+
+    mod whitespace {
+        use crate::input::{code_points::LF, Filtered};
+
+        /// https://drafts.csswg.org/css-syntax-3/#whitespace
+        pub struct Whitespace(char);
+
+        impl Whitespace {
+            const fn try_new(c: char) -> Option<Self> {
+                // A newline, U+0009 CHARACTER TABULATION, or U+0020 SPACE
+                match c {
+                    LF | '\u{0009}' | '\u{0020}' => Some(Self(c)),
+                    _ => None,
+                }
+            }
+
+            pub const fn consume(stream: Filtered) -> Option<(Whitespace, Filtered)> {
+                if let Some((fc, stream)) = stream.next() {
+                    if let Some(this) = Self::try_new(fc.to_char()) {
+                        return Some((this, stream));
+                    }
+                }
+
+                None
+            }
+        }
+    }
 }
 
 mod string_token {
     use konst::const_panic::unwrap_some;
 
-    use crate::parse::{
+    use crate::input::{
         code_points::{LF, REVERSE_SOLIDUS},
-        errors::Eof,
-        filtered::{Filtered, FilteredChar},
+        Filtered, FilteredChar,
     };
 
-    use super::escaped_code_point::EscapedCodePoint;
+    use super::{errors::Eof, escaped_code_point::EscapedCodePoint};
 
     #[derive(Debug, Clone, Copy)]
     pub struct StringToken<'a> {
@@ -158,8 +186,7 @@ mod string_token {
 }
 
 pub mod token {
-    use crate::parse::filtered::{Filtered, FilteredChar, FilteredCharVec};
-    use crate::parse::is_ident_code_point;
+    use crate::input::{code_points::is_ident_code_point, Filtered, FilteredChar, FilteredCharVec};
 
     use super::escaped_code_point::EscapedCodePoint;
     use super::ident_like_token::{FunctionToken, IdentLikeToken, UrlParseError};
@@ -469,7 +496,7 @@ pub mod token {
 }
 
 pub mod simple_token {
-    use crate::parse::filtered::Filtered;
+    use crate::input::Filtered;
 
     macro_rules! define_simple_tokens {
         (
@@ -544,7 +571,7 @@ pub mod simple_token {
 mod numeric_token {
     use konst::try_opt;
 
-    use crate::parse::{code_points::PERCENTAGE_SIGN, filtered::Filtered};
+    use crate::input::{code_points::PERCENTAGE_SIGN, Filtered};
 
     use super::ident_sequence::IdentSequence;
 
@@ -699,10 +726,12 @@ mod numeric_token {
 }
 
 pub mod ident_like_token {
-    use crate::parse::code_points::{REVERSE_SOLIDUS, RIGHT_PARENTHESIS};
-    use crate::parse::errors::Eof;
-    use crate::parse::whitespace::Whitespace;
-    use crate::parse::{code_points::LEFT_PARENTHESIS, filtered::Filtered};
+    use super::errors::Eof;
+    use super::whitespace_token::Whitespace;
+    use crate::input::{
+        code_points::{LEFT_PARENTHESIS, REVERSE_SOLIDUS, RIGHT_PARENTHESIS},
+        Filtered,
+    };
 
     use super::escaped_code_point::EscapedCodePoint;
     use super::whitespace_token::WhitespaceToken;
@@ -868,8 +897,8 @@ pub mod ident_like_token {
 pub mod ident_token {
     use konst::try_opt;
 
-    use super::super::{code_points::LEFT_PARENTHESIS, filtered::Filtered};
     use super::ident_sequence::IdentSequence;
+    use crate::input::{code_points::LEFT_PARENTHESIS, Filtered};
 
     /// https://drafts.csswg.org/css-syntax-3/#consume-ident-like-token
     #[derive(Debug, Clone, Copy)]
@@ -922,7 +951,8 @@ pub mod ident_token {
 }
 
 pub mod hex_digit {
-    use super::{super::filtered::Filtered, hex_digits::HexDigits};
+    use super::hex_digits::HexDigits;
+    use crate::input::Filtered;
 
     /// https://drafts.csswg.org/css-syntax-3/#hex-digit
     pub struct HexDigit(char);
@@ -978,8 +1008,8 @@ pub mod hex_digit {
 }
 
 pub mod hex_digits {
-    use super::super::whitespace::Whitespace;
     use super::hex_digit::HexDigit;
+    use super::whitespace_token::Whitespace;
 
     pub struct HexDigits<const N: usize> {
         hex_digits: [char; N], // must be HexDigit
@@ -1023,10 +1053,11 @@ pub mod hex_digits {
 mod ident_sequence {
     use konst::const_panic::unwrap_ok;
 
-    use super::super::{
-        code_points::{HYPHEN_MINUS, REVERSE_SOLIDUS},
-        filtered::{Filtered, FilteredCharVec},
-        is_ident_code_point, is_ident_start_code_point,
+    use crate::input::{
+        code_points::{
+            is_ident_code_point, is_ident_start_code_point, HYPHEN_MINUS, REVERSE_SOLIDUS,
+        },
+        Filtered, FilteredCharVec,
     };
 
     use super::escaped_code_point::EscapedCodePoint;
@@ -1117,14 +1148,14 @@ mod ident_sequence {
 mod escaped_code_point {
     use konst::try_opt;
 
-    use super::super::{
+    use crate::input::{
         code_points::{LF, REVERSE_SOLIDUS},
-        errors::Eof,
-        filtered::{Filtered, FilteredChar, FilteredCharVec},
-        whitespace::Whitespace,
+        Filtered, FilteredChar, FilteredCharVec,
     };
 
-    use super::{hex_digit::HexDigit, hex_digits::HexDigits};
+    use super::{
+        errors::Eof, hex_digit::HexDigit, hex_digits::HexDigits, whitespace_token::Whitespace,
+    };
 
     /// https://drafts.csswg.org/css-syntax-3/#consume-escaped-code-point
     pub enum EscapedCodePoint {
@@ -1189,7 +1220,7 @@ mod escaped_code_point {
 }
 
 mod unicode_range {
-    use crate::parse::filtered::{Filtered, FilteredCharVec};
+    use crate::input::{Filtered, FilteredCharVec};
 
     use super::{hex_digit::HexDigit, hex_digits::HexDigits};
 
@@ -1297,7 +1328,7 @@ mod unicode_range {
 }
 
 mod token_or_unicode_range {
-    use crate::parse::filtered::Filtered;
+    use crate::input::Filtered;
 
     use super::{
         token::{Token, TokenParseOutput, TokenParseResult},
@@ -1345,3 +1376,5 @@ mod token_or_unicode_range {
     }
     // Consume comments.
 }
+
+mod errors;

@@ -1,13 +1,11 @@
 pub use buffered_token_stream::{BufferedToken, BufferedTokenStream, BufferedTokenStreamUnwrapOne};
 
-use super::{
-    array_vec::{ArrayVec, ConstDummyValueFor},
-    filtered::Filtered,
-    tokens::{
-        token::{Token, TokenParseError, TokenParseOutput, TokenParseResult},
-        whitespace_token::WhitespaceToken,
-    },
+use super::tokens::{
+    token::{Token, TokenParseError, TokenParseOutput, TokenParseResult},
+    whitespace_token::WhitespaceToken,
 };
+use crate::input::Filtered;
+use crate::util::array_vec::{ArrayVec, ConstDummyValueFor};
 
 pub struct TokenStream<'a>(Filtered<'a>);
 
@@ -68,13 +66,11 @@ impl<'a> TokenStream<'a> {
 mod buffered_token_stream {
     use std::ops::Range;
 
-    use crate::parse::{
-        array_vec::{ArrayVec, ConstDummyValueFor},
-        tokens::{
-            token::{Token, TokenParseResult},
-            whitespace_token::WhitespaceToken,
-        },
+    use crate::token::tokens::{
+        token::{Token, TokenParseResult},
+        whitespace_token::WhitespaceToken,
     };
+    use crate::util::array_vec::{ArrayVec, ConstDummyValueFor};
 
     use super::{CopyableTokenStream, TokenStream};
 

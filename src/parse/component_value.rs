@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
-use crate::parse::{
-    token_stream::{
+use crate::token::{
+    stream::{
         BufferedToken, BufferedTokenStreamUnwrapOne, CopyableTokenStream, TokenStream,
         TokenStreamProcess,
     },
