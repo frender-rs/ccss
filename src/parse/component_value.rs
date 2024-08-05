@@ -246,13 +246,23 @@ impl<'a> ListParseFullError<'a, NestedFalse> {
     }
 }
 
-enum ListParseNotNestedError<'a> {
+pub enum ListParseNotNestedError<'a> {
     ComponentValue(ComponentValueParseError<'a>),
     UnexpectedRightCurlyBracket(RightCurlyBracketAndRemaining<'a>),
 }
 
+macro_rules! match_no_stop_token {
+    ($e:expr) => {
+        match $e {
+            StopTokenWithConfig::Comma(_, m) => match m {},
+            StopTokenWithConfig::Semicolon(_, m) => match m {},
+        }
+    };
+}
+
 impl<'a> ComponentValueConsumeList<'a> {
     /// Returns `Ok(None)` is self is empty.
+    ///
     /// stop_token is unset.
     /// nested is false.
     ///
@@ -261,7 +271,12 @@ impl<'a> ComponentValueConsumeList<'a> {
         self,
     ) -> Result<Option<(ComponentValue<'a>, Self)>, ListParseNotNestedError<'a>> {
         match self.try_next_full::<NoStopToken, NestedFalse>() {
-            Ok(_) => todo!(),
+            Ok(next) => Ok(match next {
+                NextFull::YieldValue(value, this) => Some((value, this)),
+                NextFull::NextIsRightCurlyBracket(_, marker) => match marker {},
+                NextFull::NextIsStopToken(t) => match_no_stop_token!(t.token),
+                NextFull::Eof => None,
+            }),
             Err(err) => Err(err.into_not_nested_error()),
         }
     }
