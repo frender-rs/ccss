@@ -1,5 +1,5 @@
 [package]
-name = "css-const"
+name = "ccss"
 version = "0.1.0"
 edition = "2021"
 
