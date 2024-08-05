@@ -1,5 +1,3 @@
-use std::marker::PhantomData;
-
 use crate::token::{
     stream::{
         BufferedToken, BufferedTokenStreamUnwrapOne, CopyableTokenStream, TokenStream,
@@ -8,7 +6,7 @@ use crate::token::{
     tokens::{
         ident_like_token::{FunctionToken, IdentLikeToken},
         simple_token::{Comma, RightCurlyBracket, RightParenthesis, Semicolon, SimpleToken},
-        token::{SimpleBlockSurroundingTokens, Token, TokenParseError, TokenParseResult},
+        token::{SimpleBlockSurroundingTokens, Token, TokenParseError},
     },
 };
 

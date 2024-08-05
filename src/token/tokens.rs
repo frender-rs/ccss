@@ -1,8 +1,6 @@
 pub mod whitespace_token {
     pub use self::whitespace::Whitespace;
 
-    use konst::try_opt;
-
     use crate::input::Filtered;
 
     #[derive(Debug, Clone, Copy)]
@@ -53,7 +51,6 @@ pub mod whitespace_token {
 }
 
 mod string_token {
-    use konst::const_panic::unwrap_some;
 
     use crate::input::{
         code_points::{LF, REVERSE_SOLIDUS},
@@ -569,7 +566,6 @@ pub mod simple_token {
 }
 
 mod numeric_token {
-    use konst::try_opt;
 
     use crate::input::{code_points::PERCENTAGE_SIGN, Filtered};
 
@@ -727,7 +723,7 @@ mod numeric_token {
 
 pub mod ident_like_token {
     use super::errors::Eof;
-    use super::whitespace_token::Whitespace;
+
     use crate::input::{
         code_points::{LEFT_PARENTHESIS, REVERSE_SOLIDUS, RIGHT_PARENTHESIS},
         Filtered,
@@ -895,7 +891,6 @@ pub mod ident_like_token {
 }
 
 pub mod ident_token {
-    use konst::try_opt;
 
     use super::ident_sequence::IdentSequence;
     use crate::input::{code_points::LEFT_PARENTHESIS, Filtered};
@@ -1051,7 +1046,6 @@ pub mod hex_digits {
 }
 
 mod ident_sequence {
-    use konst::const_panic::unwrap_ok;
 
     use crate::input::{
         code_points::{
@@ -1146,7 +1140,6 @@ mod ident_sequence {
 }
 
 mod escaped_code_point {
-    use konst::try_opt;
 
     use crate::input::{
         code_points::{LF, REVERSE_SOLIDUS},
@@ -1222,7 +1215,7 @@ mod escaped_code_point {
 mod unicode_range {
     use crate::input::{Filtered, FilteredCharVec};
 
-    use super::{hex_digit::HexDigit, hex_digits::HexDigits};
+    use super::hex_digit::HexDigit;
 
     #[derive(Debug, Clone, Copy)]
     pub struct UnicodeRangeToken<'a> {

@@ -2,7 +2,7 @@
 
 use konst::{string::Chars, try_opt};
 
-use super::code_points::{is_ident_code_point, LF};
+use super::code_points::LF;
 
 /// https://drafts.csswg.org/css-syntax-3/#css-filter-code-points
 pub struct Filtered<'a>(pub Chars<'a>);
