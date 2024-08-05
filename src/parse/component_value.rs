@@ -7,7 +7,7 @@ use crate::token::{
     },
     tokens::{
         ident_like_token::{FunctionToken, IdentLikeToken},
-        simple_token::{RightCurlyBracket, RightParenthesis, SimpleToken},
+        simple_token::{Comma, RightCurlyBracket, RightParenthesis, Semicolon, SimpleToken},
         token::{SimpleBlockSurroundingTokens, Token, TokenParseError, TokenParseResult},
     },
 };
@@ -218,91 +218,56 @@ impl<'a> ComponentValue<'a> {
         }
     }
 
-    /// `stop token` is unset.
-    /// `nested` is false
-    pub const fn consume_list(
-        input: TokenStream<'a>,
-    ) -> ComponentValueConsumeList<'a, NoStopToken> {
-        ComponentValueConsumeList {
-            input,
-            _options: PhantomData,
-        }
-    }
-
-    /// `stop token` is semicolon.
-    /// `nested` is false
-    pub const fn consume_list_with_semicolon_as_stop_token(
-        input: TokenStream<'a>,
-    ) -> ComponentValueConsumeList<'a, NoStopToken> {
-        ComponentValueConsumeList {
-            input,
-            _options: PhantomData,
-        }
+    pub const fn consume_list(input: TokenStream<'a>) -> ComponentValueConsumeList<'a> {
+        ComponentValueConsumeList { input }
     }
 }
 
-pub struct ComponentValueConsumeList<'a, StopToken: HasComponentValueConsumeListStopToken> {
+pub struct ComponentValueConsumeList<'a> {
     input: TokenStream<'a>,
-    _options: PhantomData<StopToken>,
 }
 
-pub enum ComponentValueListParseNotNestedError<'a> {
+enum ListParseFullError<'a, Nested: NestedConfig> {
     ComponentValue(ComponentValueParseError<'a>),
-    UnexpectedRightCurlyBracket {
-        unexpected: RightCurlyBracket<'a>,
-        remaining: TokenStream<'a>,
-    },
+    UnexpectedRightCurlyBracket(
+        RightCurlyBracketAndRemaining<'a>,
+        Nested::RightCurlyBracketIsErr,
+    ),
 }
 
-impl<'a, StopToken: HasComponentValueConsumeListStopToken>
-    ComponentValueConsumeList<'a, StopToken>
-{
+impl<'a> ListParseFullError<'a, NestedFalse> {
+    const fn into_not_nested_error(self) -> ListParseNotNestedError<'a> {
+        match self {
+            ListParseFullError::ComponentValue(v) => ListParseNotNestedError::ComponentValue(v),
+            ListParseFullError::UnexpectedRightCurlyBracket(v, ()) => {
+                ListParseNotNestedError::UnexpectedRightCurlyBracket(v)
+            }
+        }
+    }
+}
+
+enum ListParseNotNestedError<'a> {
+    ComponentValue(ComponentValueParseError<'a>),
+    UnexpectedRightCurlyBracket(RightCurlyBracketAndRemaining<'a>),
+}
+
+impl<'a> ComponentValueConsumeList<'a> {
     /// Returns `Ok(None)` is self is empty.
+    /// stop_token is unset.
+    /// nested is false.
+    ///
     /// https://drafts.csswg.org/css-syntax-3/#consume-list-of-components
     pub const fn try_next(
         self,
-    ) -> Result<Option<(ComponentValue<'a>, Self)>, ComponentValueListParseNotNestedError<'a>> {
-        match self.input.try_process() {
-            Ok(input) => match input.next_token_copied() {
-                Some(token) => match token {
-                    Token::Simple(SimpleToken::RightCurlyBracket(unexpected)) => {
-                        return Err(
-                            ComponentValueListParseNotNestedError::UnexpectedRightCurlyBracket {
-                                unexpected,
-                                remaining: input.unparsed_remaining(),
-                            },
-                        );
-                    }
-                    _ => match ComponentValue::try_consume_one(input) {
-                        Ok((value, input)) => {
-                            return Ok(Some((
-                                value,
-                                Self {
-                                    input,
-                                    _options: PhantomData,
-                                },
-                            )))
-                        }
-                        Err(err) => {
-                            return Err(ComponentValueListParseNotNestedError::ComponentValue(err))
-                        }
-                    },
-                },
-                None => {
-                    // EOF
-                    return Ok(None);
-                }
-            },
-            Err(err) => {
-                return Err(ComponentValueListParseNotNestedError::ComponentValue(
-                    ComponentValueParseError::Token(err),
-                ))
-            }
+    ) -> Result<Option<(ComponentValue<'a>, Self)>, ListParseNotNestedError<'a>> {
+        match self.try_next_full::<NoStopToken, NestedFalse>() {
+            Ok(_) => todo!(),
+            Err(err) => Err(err.into_not_nested_error()),
         }
     }
 
     /// Will consume till EOF
-    pub const fn try_count(mut self) -> Result<usize, ComponentValueListParseNotNestedError<'a>> {
+    pub const fn try_count(mut self) -> Result<usize, ListParseNotNestedError<'a>> {
         let mut count = 0;
 
         loop {
@@ -319,134 +284,166 @@ impl<'a, StopToken: HasComponentValueConsumeListStopToken>
         }
     }
 
-    /// Returns `Ok(None)` if self is empty.
     /// https://drafts.csswg.org/css-syntax-3/#consume-list-of-components
-    pub const fn try_next_nested(
+    const fn try_next_full<StopToken: StopTokenConfig, Nested: NestedConfig>(
         self,
-    ) -> Result<ComponentValueNextNested<'a, StopToken>, ComponentValueParseError<'a>> {
+    ) -> Result<NextFull<'a, StopToken, Nested>, ListParseFullError<'a, Nested>> {
         match self.input.try_process() {
             Ok(input) => match input.next_token_copied() {
                 Some(token) => match token {
                     Token::Simple(SimpleToken::RightCurlyBracket(right_curly_bracket)) => {
-                        return Ok(ComponentValueNextNested::NextIsRightCurlyBracket(
-                            NextIsRightCurlyBracket {
-                                remaining: input.unparsed_remaining(),
-                                right_curly_bracket,
-                                right_curly_bracket_and_remaining: input.tokens_and_remaining(),
+                        let info = RightCurlyBracketAndRemaining {
+                            remaining: input.unparsed_remaining(),
+                            token: right_curly_bracket,
+                            full: input.tokens_and_remaining(),
+                        };
+                        return match Nested::RIGHT_CURLY_BRACKET_RESULT {
+                            Ok(is_ok) => Ok(NextFull::NextIsRightCurlyBracket(info, is_ok)),
+                            Err(is_error) => Err(ListParseFullError::UnexpectedRightCurlyBracket(
+                                info, is_error,
+                            )),
+                        };
+                    }
+                    token => {
+                        let stop_token = StopToken::STOP_TOKEN_KIND.check(token);
+                        match stop_token {
+                            Some(token) => {
+                                // stop token
+                                return Ok(NextFull::NextIsStopToken(TokenAndRemaining {
+                                    token,
+                                    remaining: input.unparsed_remaining(),
+                                    full: input.tokens_and_remaining(),
+                                }));
+                            }
+                            None => match ComponentValue::try_consume_one(input) {
+                                Ok((value, input)) => {
+                                    return Ok(NextFull::YieldValue(value, Self { input }))
+                                }
+                                Err(err) => return Err(ListParseFullError::ComponentValue(err)),
                             },
-                        ));
-                    }
-                    token if false => {
-                        // STOP_TOKEN
-                        todo!()
-                    }
-                    _ => match ComponentValue::try_consume_one(input) {
-                        Ok((value, input)) => {
-                            return Ok(ComponentValueNextNested::YieldValue(
-                                value,
-                                Self {
-                                    input,
-                                    _options: PhantomData,
-                                },
-                            ))
                         }
-                        Err(err) => return Err(err),
-                    },
+                    }
                 },
                 None => {
                     // EOF
-                    return Ok(ComponentValueNextNested::Eof);
+                    return Ok(NextFull::Eof);
                 }
             },
-            Err(err) => return Err(ComponentValueParseError::Token(err)),
-        }
-    }
-
-    /// Will consume till EOF or RightCurlyBracket
-    pub const fn try_count_nested(
-        mut self,
-    ) -> Result<(usize, Option<NextIsRightCurlyBracket<'a>>), ComponentValueParseError<'a>> {
-        let mut count = 0;
-
-        loop {
-            self = match self.try_next_nested() {
-                Ok(ComponentValueNextNested::YieldValue(_, this)) => {
-                    count += 1;
-                    this
-                }
-                Ok(ComponentValueNextNested::NextIsRightCurlyBracket(n)) => {
-                    return Ok((count, Some(n)));
-                }
-                Ok(ComponentValueNextNested::Eof) => {
-                    return Ok((count, None));
-                }
-                Err(err) => return Err(err),
+            Err(err) => {
+                return Err(ListParseFullError::ComponentValue(
+                    ComponentValueParseError::Token(err),
+                ))
             }
         }
     }
 }
 
-pub struct NextIsRightCurlyBracket<'a> {
-    pub right_curly_bracket: RightCurlyBracket<'a>,
-    /// TokenStream after right_curly_bracket
+pub struct TokenAndRemaining<'a, T> {
+    pub token: T,
+    /// after token
     pub remaining: TokenStream<'a>,
-    /// starts with RightCurlyBracket
-    pub right_curly_bracket_and_remaining: TokenStream<'a>,
+    /// full = token + remaining
+    pub full: TokenStream<'a>,
 }
 
-pub enum ComponentValueNextNested<'a, StopToken: HasComponentValueConsumeListStopToken> {
-    YieldValue(ComponentValue<'a>, ComponentValueConsumeList<'a, StopToken>),
-    NextIsRightCurlyBracket(NextIsRightCurlyBracket<'a>),
+type RightCurlyBracketAndRemaining<'a> = TokenAndRemaining<'a, RightCurlyBracket<'a>>;
+
+enum NextFull<'a, StopToken: StopTokenConfig, Nested: NestedConfig> {
+    YieldValue(ComponentValue<'a>, ComponentValueConsumeList<'a>),
+    NextIsRightCurlyBracket(
+        RightCurlyBracketAndRemaining<'a>,
+        Nested::RightCurlyBracketIsOk,
+    ),
+    NextIsStopToken(TokenAndRemaining<'a, StopTokenWithConfig<'a, StopToken>>),
     Eof,
 }
 
-pub struct ComponentValueConsumeListOptions {
-    stop_token: Option<ComponentValueConsumeListStopToken>,
-    nested: bool,
+enum StopTokenKind<StopToken: StopTokenConfig> {
+    Unset(StopToken::IsUnset),
+    Comma(StopToken::IsComma),
+    Semicolon(StopToken::IsSemicolon),
 }
 
-pub enum ComponentValueConsumeListStopToken {
-    Comma,
-    Semicolon,
-}
+impl<StopToken: StopTokenConfig> StopTokenKind<StopToken> {
+    const fn test(&self, token: &Token<'_>) -> bool {
+        match (self, token) {
+            (Self::Comma(_), Token::Simple(SimpleToken::Comma(_)))
+            | (Self::Semicolon(_), Token::Simple(SimpleToken::Semicolon(_))) => true,
+            _ => false,
+        }
+    }
 
-pub trait HasComponentValueConsumeListError {
-    type ComponentValueConsumeListError<'a>;
-}
-
-struct Nested<const NESTED: bool>;
-
-impl Nested<true> {
-    const fn error_from_component_value_parse_error(
-        err: ComponentValueParseError,
-    ) -> ComponentValueParseError {
-        err
+    const fn check<'a>(self, token: Token<'a>) -> Option<StopTokenWithConfig<'a, StopToken>> {
+        match (self, token) {
+            (Self::Comma(m), Token::Simple(SimpleToken::Comma(t))) => {
+                Some(StopTokenWithConfig::Comma(t, m))
+            }
+            (Self::Semicolon(m), Token::Simple(SimpleToken::Semicolon(t))) => {
+                Some(StopTokenWithConfig::Semicolon(t, m))
+            }
+            _ => None,
+        }
     }
 }
 
-impl Nested<false> {
-    const fn error_from_component_value_parse_error(
-        err: ComponentValueParseError,
-    ) -> ComponentValueListParseNotNestedError {
-        ComponentValueListParseNotNestedError::ComponentValue(err)
-    }
-}
-
-impl HasComponentValueConsumeListError for Nested<true> {
-    type ComponentValueConsumeListError<'a> = ComponentValueParseError<'a>;
-}
-
-impl HasComponentValueConsumeListError for Nested<false> {
-    type ComponentValueConsumeListError<'a> = ComponentValueListParseNotNestedError<'a>;
-}
-
-pub trait HasComponentValueConsumeListStopToken {
-    const COMPONENT_VALUE_CONSUME_LIST_STOP_TOKEN: Option<ComponentValueConsumeListStopToken>;
-}
-
+#[derive(Clone, Copy)]
 pub enum NoStopToken {}
 
-impl HasComponentValueConsumeListStopToken for NoStopToken {
-    const COMPONENT_VALUE_CONSUME_LIST_STOP_TOKEN: Option<ComponentValueConsumeListStopToken> =
-        None;
+trait StopTokenConfig: Sized {
+    type IsUnset: Copy;
+    type IsComma: Copy;
+    type IsSemicolon: Copy;
+    const STOP_TOKEN_KIND: StopTokenKind<Self>;
+}
+
+impl StopTokenConfig for NoStopToken {
+    type IsUnset = ();
+    type IsComma = Self;
+    type IsSemicolon = Self;
+    const STOP_TOKEN_KIND: StopTokenKind<Self> = StopTokenKind::Unset(());
+}
+
+trait NestedConfig {
+    type RightCurlyBracketIsOk: Copy;
+    type RightCurlyBracketIsErr: Copy;
+    const RIGHT_CURLY_BRACKET_RESULT: Result<
+        Self::RightCurlyBracketIsOk,
+        Self::RightCurlyBracketIsErr,
+    >;
+}
+
+#[derive(Clone, Copy)]
+enum NestedTrue {}
+
+impl NestedConfig for NestedTrue {
+    type RightCurlyBracketIsOk = ();
+    type RightCurlyBracketIsErr = Self;
+
+    const RIGHT_CURLY_BRACKET_RESULT: Result<
+        Self::RightCurlyBracketIsOk,
+        Self::RightCurlyBracketIsErr,
+    > = Ok(());
+}
+
+#[derive(Clone, Copy)]
+enum NestedFalse {}
+
+impl NestedConfig for NestedFalse {
+    type RightCurlyBracketIsOk = Self;
+    type RightCurlyBracketIsErr = ();
+
+    const RIGHT_CURLY_BRACKET_RESULT: Result<
+        Self::RightCurlyBracketIsOk,
+        Self::RightCurlyBracketIsErr,
+    > = Err(());
+}
+
+enum StopToken<'a> {
+    Comma(Comma<'a>),
+    Semicolon(Semicolon<'a>),
+}
+
+enum StopTokenWithConfig<'a, StopToken: StopTokenConfig> {
+    Comma(Comma<'a>, StopToken::IsComma),
+    Semicolon(Semicolon<'a>, StopToken::IsSemicolon),
 }
