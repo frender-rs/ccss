@@ -644,7 +644,12 @@ mod numeric_token {
                         stream = stream_before_next_two;
                     }
                 }
-                _ => stream = stream_before_next_two,
+                _ => {
+                    if number.is_empty() {
+                        return (None, original);
+                    }
+                    stream = stream_before_next_two
+                }
             }
 
             (
