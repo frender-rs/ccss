@@ -122,4 +122,20 @@ impl<T, D: ConstDummyValueFor<T>, const CAP: usize> ArrayVec<T, D, CAP> {
     pub(crate) const fn is_empty(&self) -> bool {
         self.len == 0
     }
+
+    const ASSERT_CAP_IS_NON_ZERO: () = assert!(CAP != 0);
+
+    /// If filled, pop_front
+    pub(crate) const fn with_force_push(self, value: T) -> (Option<T>, Self)
+    where
+        T: Copy,
+    {
+        () = Self::ASSERT_CAP_IS_NON_ZERO;
+        if self.len < CAP {
+            (None, self.with_push(value))
+        } else {
+            let (front, this) = self.with_pop_front();
+            (front, this.with_push(value))
+        }
+    }
 }

@@ -222,6 +222,12 @@ pub mod token {
         value: FilteredChar,
     }
 
+    impl<'a> DelimToken<'a> {
+        pub const fn value(&self) -> FilteredChar {
+            self.value
+        }
+    }
+
     #[derive(Debug, Clone, Copy)]
     pub struct HashToken<'a> {
         full: &'a str,
@@ -439,6 +445,10 @@ pub mod token {
                 _ => None,
             }
         }
+
+        pub(crate) const fn is_whitespace(&self) -> bool {
+            matches!(self, Self::WhitespaceToken(_))
+        }
     }
 
     #[derive(Debug, Clone, Copy)]
@@ -478,6 +488,7 @@ pub mod token {
         Parenthesis(RightParenthesis<'a>),
     }
 
+    #[derive(Clone, Copy)]
     pub enum SimpleBlockSurroundingTokens<'a> {
         CurlyBracket(LeftCurlyBracket<'a>, RightCurlyBracket<'a>),
         SquareBracket(LeftSquareBracket<'a>, RightSquareBracket<'a>),

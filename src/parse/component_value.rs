@@ -1,22 +1,24 @@
 use crate::token::{
     stream::{
-        BufferedToken, BufferedTokenStreamUnwrapOne, CopyableTokenStream, TokenStream,
-        TokenStreamProcess,
+        BufferedToken, BufferedTokenStream, BufferedTokenStreamUnwrapOne, CopyableTokenStream,
+        TokenStream, TokenStreamProcess,
     },
     tokens::{
         ident_like_token::{FunctionToken, IdentLikeToken},
         simple_token::{Comma, RightCurlyBracket, RightParenthesis, Semicolon, SimpleToken},
-        token::{SimpleBlockSurroundingTokens, Token, TokenParseError},
+        token::{SimpleBlockSurroundingTokens, Token, TokenParseError, TokenParseResult},
     },
 };
 
 /// https://drafts.csswg.org/css-syntax-3/#component-value
+#[derive(Clone, Copy)]
 pub enum ComponentValue<'a> {
     PreservedTokens(Token<'a>),
     Function(Function<'a>),
     SimpleBlock(SimpleBlock<'a>),
 }
 
+#[derive(Clone, Copy)]
 pub struct Function<'a> {
     full: CopyableTokenStream<'a>,
     function_token: FunctionToken<'a>,
@@ -24,9 +26,17 @@ pub struct Function<'a> {
     right_parenthesis: RightParenthesis<'a>,
 }
 
+#[derive(Clone, Copy)]
 pub struct List<'a> {
-    full: CopyableTokenStream<'a>,
-    len: usize,
+    pub full: CopyableTokenStream<'a>,
+    pub len: usize,
+}
+
+impl<'a> List<'a> {
+    pub const EMPTY: Self = Self {
+        full: TokenStream::EMPTY.to_copyable(),
+        len: 0,
+    };
 }
 
 impl<'a> Function<'a> {
@@ -102,6 +112,7 @@ impl<'a> Function<'a> {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct SimpleBlock<'a> {
     full: CopyableTokenStream<'a>,
     value: List<'a>,
@@ -216,16 +227,28 @@ impl<'a> ComponentValue<'a> {
         }
     }
 
-    pub const fn consume_list(input: TokenStream<'a>) -> ComponentValueConsumeList<'a> {
-        ComponentValueConsumeList { input }
+    pub const fn try_consume_list(
+        input: TokenStream<'a>,
+    ) -> TokenParseResult<ComponentValueConsumeList<'a>> {
+        match input.try_process() {
+            Ok(input) => Ok(ComponentValueConsumeList { input }),
+            Err(err) => Err(err),
+        }
+    }
+
+    pub(crate) const fn is_whitespace(&self) -> bool {
+        match self {
+            ComponentValue::PreservedTokens(t) => t.is_whitespace(),
+            _ => false,
+        }
     }
 }
 
 pub struct ComponentValueConsumeList<'a> {
-    input: TokenStream<'a>,
+    pub(crate) input: TokenStreamProcess<'a>,
 }
 
-enum ListParseFullError<'a, Nested: NestedConfig> {
+pub(crate) enum ListParseFullError<'a, Nested: NestedConfig> {
     ComponentValue(ComponentValueParseError<'a>),
     UnexpectedRightCurlyBracket(
         RightCurlyBracketAndRemaining<'a>,
@@ -298,56 +321,61 @@ impl<'a> ComponentValueConsumeList<'a> {
     }
 
     /// https://drafts.csswg.org/css-syntax-3/#consume-list-of-components
-    const fn try_next_full<StopToken: StopTokenConfig, Nested: NestedConfig>(
+    pub(crate) const fn try_next_full<StopToken: StopTokenConfig, Nested: NestedConfig>(
         self,
     ) -> Result<NextFull<'a, StopToken, Nested>, ListParseFullError<'a, Nested>> {
-        match self.input.try_process() {
-            Ok(input) => match input.next_token_copied() {
-                Some(token) => match token {
-                    Token::Simple(SimpleToken::RightCurlyBracket(right_curly_bracket)) => {
-                        let info = RightCurlyBracketAndRemaining {
-                            remaining: input.unparsed_remaining(),
-                            token: right_curly_bracket,
-                            full: input.tokens_and_remaining(),
-                        };
-                        return match Nested::RIGHT_CURLY_BRACKET_RESULT {
-                            Ok(is_ok) => Ok(NextFull::NextIsRightCurlyBracket(info, is_ok)),
-                            Err(is_error) => Err(ListParseFullError::UnexpectedRightCurlyBracket(
-                                info, is_error,
-                            )),
-                        };
-                    }
-                    token => {
-                        let stop_token = StopToken::STOP_TOKEN_KIND.check(token);
-                        match stop_token {
-                            Some(token) => {
-                                // stop token
-                                return Ok(NextFull::NextIsStopToken(TokenAndRemaining {
-                                    token,
-                                    remaining: input.unparsed_remaining(),
-                                    full: input.tokens_and_remaining(),
-                                }));
-                            }
-                            None => match ComponentValue::try_consume_one(input) {
-                                Ok((value, input)) => {
-                                    return Ok(NextFull::YieldValue(value, Self { input }))
-                                }
-                                Err(err) => return Err(ListParseFullError::ComponentValue(err)),
-                            },
+        let input = self.input;
+        match input.next_token_copied() {
+            Some(token) => match token {
+                Token::Simple(SimpleToken::RightCurlyBracket(right_curly_bracket)) => {
+                    let info = RightCurlyBracketAndRemaining {
+                        remaining: input.unparsed_remaining(),
+                        token: right_curly_bracket,
+                        full: input.tokens_and_remaining(),
+                    };
+                    return match Nested::RIGHT_CURLY_BRACKET_RESULT {
+                        Ok(is_ok) => Ok(NextFull::NextIsRightCurlyBracket(info, is_ok)),
+                        Err(is_error) => Err(ListParseFullError::UnexpectedRightCurlyBracket(
+                            info, is_error,
+                        )),
+                    };
+                }
+                token => {
+                    let stop_token = StopToken::STOP_TOKEN_KIND.check(token);
+                    match stop_token {
+                        Some(token) => {
+                            // stop token
+                            return Ok(NextFull::NextIsStopToken(TokenAndRemaining {
+                                token,
+                                remaining: input.unparsed_remaining(),
+                                full: input.tokens_and_remaining(),
+                            }));
                         }
+                        None => match ComponentValue::try_consume_one(input) {
+                            Ok((value, input)) => match input.try_process() {
+                                Ok(input) => {
+                                    return Ok(NextFull::YieldValue(value, Self { input }));
+                                }
+                                Err(err) => {
+                                    return Err(ListParseFullError::ComponentValue(
+                                        ComponentValueParseError::Token(err),
+                                    ))
+                                }
+                            },
+                            Err(err) => return Err(ListParseFullError::ComponentValue(err)),
+                        },
                     }
-                },
-                None => {
-                    // EOF
-                    return Ok(NextFull::Eof);
                 }
             },
-            Err(err) => {
-                return Err(ListParseFullError::ComponentValue(
-                    ComponentValueParseError::Token(err),
-                ))
+            None => {
+                // EOF
+                return Ok(NextFull::Eof);
             }
         }
+    }
+
+    pub(crate) const fn new_with_process(input: BufferedTokenStream<'a, 1>) -> Self {
+        Self { input }
     }
 }
 
@@ -359,9 +387,9 @@ pub struct TokenAndRemaining<'a, T> {
     pub full: TokenStream<'a>,
 }
 
-type RightCurlyBracketAndRemaining<'a> = TokenAndRemaining<'a, RightCurlyBracket<'a>>;
+pub(crate) type RightCurlyBracketAndRemaining<'a> = TokenAndRemaining<'a, RightCurlyBracket<'a>>;
 
-enum NextFull<'a, StopToken: StopTokenConfig, Nested: NestedConfig> {
+pub(crate) enum NextFull<'a, StopToken: StopTokenConfig, Nested: NestedConfig> {
     YieldValue(ComponentValue<'a>, ComponentValueConsumeList<'a>),
     NextIsRightCurlyBracket(
         RightCurlyBracketAndRemaining<'a>,
@@ -400,7 +428,10 @@ impl<StopToken: StopTokenConfig> StopTokenKind<StopToken> {
 }
 
 #[derive(Clone, Copy)]
-pub enum NoStopToken {}
+pub(crate) enum NoStopToken {}
+
+#[derive(Clone, Copy)]
+pub(crate) enum SemicolonAsStopToken {}
 
 trait StopTokenConfig: Sized {
     type IsUnset: Copy;
@@ -416,7 +447,14 @@ impl StopTokenConfig for NoStopToken {
     const STOP_TOKEN_KIND: StopTokenKind<Self> = StopTokenKind::Unset(());
 }
 
-trait NestedConfig {
+impl StopTokenConfig for SemicolonAsStopToken {
+    type IsUnset = Self;
+    type IsComma = Self;
+    type IsSemicolon = ();
+    const STOP_TOKEN_KIND: StopTokenKind<Self> = StopTokenKind::Semicolon(());
+}
+
+pub(crate) trait NestedConfig {
     type RightCurlyBracketIsOk: Copy;
     type RightCurlyBracketIsErr: Copy;
     const RIGHT_CURLY_BRACKET_RESULT: Result<
@@ -426,7 +464,7 @@ trait NestedConfig {
 }
 
 #[derive(Clone, Copy)]
-enum NestedTrue {}
+pub(crate) enum NestedTrue {}
 
 impl NestedConfig for NestedTrue {
     type RightCurlyBracketIsOk = ();
@@ -439,7 +477,7 @@ impl NestedConfig for NestedTrue {
 }
 
 #[derive(Clone, Copy)]
-enum NestedFalse {}
+pub(crate) enum NestedFalse {}
 
 impl NestedConfig for NestedFalse {
     type RightCurlyBracketIsOk = Self;
@@ -456,9 +494,18 @@ enum StopToken<'a> {
     Semicolon(Semicolon<'a>),
 }
 
-enum StopTokenWithConfig<'a, StopToken: StopTokenConfig> {
+pub(crate) enum StopTokenWithConfig<'a, StopToken: StopTokenConfig> {
     Comma(Comma<'a>, StopToken::IsComma),
     Semicolon(Semicolon<'a>, StopToken::IsSemicolon),
+}
+
+impl<'a> StopTokenWithConfig<'a, SemicolonAsStopToken> {
+    pub(crate) const fn into_semicolon(self) -> Semicolon<'a> {
+        match self {
+            StopTokenWithConfig::Comma(_, is_comma) => match is_comma {},
+            StopTokenWithConfig::Semicolon(t, _) => t,
+        }
+    }
 }
 
 // https://test.csswg.org/suites/css21_dev/20110323/html4/chapter-4.html
@@ -466,12 +513,16 @@ enum StopTokenWithConfig<'a, StopToken: StopTokenConfig> {
 mod tests {
     use crate::token::stream::TokenStream;
 
-    use super::{ComponentValue, StopToken};
+    use super::ComponentValue;
 
     const _: () = {
         let input = TokenStream::new("");
         assert!(matches!(
-            ComponentValue::consume_list(input).try_next(),
+            match ComponentValue::try_consume_list(input) {
+                Ok(v) => v,
+                Err(_) => unreachable!(),
+            }
+            .try_next(),
             Ok(None)
         ))
     };

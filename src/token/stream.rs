@@ -19,6 +19,12 @@ impl<'a> CopyableTokenStream<'a> {
     pub const fn to_token_stream(self) -> TokenStream<'a> {
         TokenStream(Filtered::new(self.inner))
     }
+
+    pub(crate) const fn before(&self, other: CopyableTokenStream<'a>) -> CopyableTokenStream<'a> {
+        self.to_token_stream()
+            .before(&other.to_token_stream())
+            .to_copyable()
+    }
 }
 
 impl<'a> TokenStream<'a> {
@@ -60,6 +66,16 @@ impl<'a> TokenStream<'a> {
 
     pub(crate) const fn before(&self, other: &TokenStream<'a>) -> TokenStream<'a> {
         TokenStream(Filtered::new(self.0.str_before(&other.0)))
+    }
+
+    /// https://drafts.csswg.org/css-syntax-3/#token-stream-discard-whitespace
+    pub(crate) fn try_discard_whitespace(self) -> TokenParseResult<'a, BufferedTokenStream<'a, 1>> {
+        let input = match self.try_buffer_n::<1>() {
+            Ok(input) => input,
+            Err(err) => return Err(err),
+        };
+
+        input.try_discard_whitespace()
     }
 }
 
@@ -142,7 +158,7 @@ mod buffered_token_stream {
         }
 
         // all parsed tokens and remaining
-        pub(crate) fn tokens_and_remaining_to_copyable(&self) -> CopyableTokenStream<'a> {
+        pub(crate) const fn tokens_and_remaining_to_copyable(&self) -> CopyableTokenStream<'a> {
             match self.buf.first() {
                 Some(buf_token) => buf_token.token_and_remaining,
                 // None includes the condition when N == 0
@@ -191,7 +207,12 @@ mod buffered_token_stream {
             })
         }
 
+        const ASSERT_N_IS_NOT_0: () = {
+            assert!(N != 0);
+        };
+
         pub(crate) const fn next_token_copied(&self) -> Option<Token<'a>> {
+            () = Self::ASSERT_N_IS_NOT_0;
             match self.buf.first_copied() {
                 Some(t) => Some(t.token),
                 None => None,
@@ -199,6 +220,20 @@ mod buffered_token_stream {
         }
 
         pub(crate) const fn try_next(mut self) -> TokenParseResult<'a, (Option<Token<'a>>, Self)> {
+            if N == 0 {
+                // not buffered
+                return match self.remaining.try_next() {
+                    Ok((token, remaining)) => Ok((
+                        token,
+                        Self {
+                            buf: ArrayVec::EMPTY,
+                            remaining,
+                        },
+                    )),
+                    Err(err) => Err(err),
+                };
+            }
+
             if self.buf.is_empty() {
                 return Ok((None, self));
             }
@@ -238,6 +273,27 @@ mod buffered_token_stream {
                     }
                     Err(err) => return Err(err),
                 }
+            }
+        }
+
+        pub(crate) const fn try_discard_whitespace(mut self) -> TokenParseResult<'a, Self> {
+            () = Self::ASSERT_N_IS_NOT_0;
+            while matches!(self.next_token_copied(), Some(Token::WhitespaceToken(_))) {
+                match self.try_next() {
+                    Ok((_, this)) => self = this,
+                    Err(err) => return Err(err),
+                }
+            }
+
+            Ok(self)
+        }
+    }
+
+    impl<'a> BufferedTokenStream<'a, 0> {
+        pub fn new_unbuffered(input: TokenStream<'a>) -> BufferedTokenStream<'a, 0> {
+            BufferedTokenStream {
+                buf: ArrayVec::EMPTY,
+                remaining: input,
             }
         }
     }
