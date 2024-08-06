@@ -24,6 +24,10 @@ impl<'a> CopyableTokenStream<'a> {
 impl<'a> TokenStream<'a> {
     pub const EMPTY: Self = Self(Filtered::EMPTY);
 
+    pub const fn new(s: &'a str) -> Self {
+        Self(Filtered::new(s))
+    }
+
     pub const fn to_copyable(&self) -> CopyableTokenStream<'a> {
         CopyableTokenStream {
             inner: self.0 .0.as_str(),

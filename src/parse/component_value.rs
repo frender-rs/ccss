@@ -460,3 +460,19 @@ enum StopTokenWithConfig<'a, StopToken: StopTokenConfig> {
     Comma(Comma<'a>, StopToken::IsComma),
     Semicolon(Semicolon<'a>, StopToken::IsSemicolon),
 }
+
+// https://test.csswg.org/suites/css21_dev/20110323/html4/chapter-4.html
+#[cfg(test)]
+mod tests {
+    use crate::token::stream::TokenStream;
+
+    use super::{ComponentValue, StopToken};
+
+    const _: () = {
+        let input = TokenStream::new("");
+        assert!(matches!(
+            ComponentValue::consume_list(input).try_next(),
+            Ok(None)
+        ))
+    };
+}
