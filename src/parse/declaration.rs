@@ -8,11 +8,8 @@ use crate::{
             TokenStreamProcess,
         },
         tokens::{
-            ident_like_token::IdentLikeToken,
-            ident_token::IdentToken,
-            simple_token::{Colon, Semicolon, SimpleToken},
-            token::{DelimToken, Token, TokenParseError, TokenParseResult},
-            whitespace_token::WhitespaceToken,
+            Colon, DelimToken, IdentLikeToken, IdentToken, Semicolon, SimpleToken, Token,
+            TokenParseError, TokenParseResult, WhitespaceToken,
         },
     },
     util::array_vec::{ArrayVec, ConstDummyValueFor},

@@ -1,6 +1,6 @@
 pub use buffered_token_stream::{BufferedToken, BufferedTokenStream};
 
-use super::tokens::token::{Token, TokenParseOutput, TokenParseResult};
+use super::tokens::{Token, TokenParseOutput, TokenParseResult};
 use crate::input::Filtered;
 
 pub struct TokenStream<'a>(Filtered<'a>);
@@ -102,10 +102,7 @@ mod buffered_token_stream {
     use crate::util::array_vec::{ArrayVec, ConstDummyValueFor};
     use crate::{
         parse::component_value::TokenAndRemaining,
-        token::tokens::{
-            token::{Token, TokenParseResult},
-            whitespace_token::WhitespaceToken,
-        },
+        token::tokens::{Token, TokenParseResult, WhitespaceToken},
     };
 
     use super::{CopyableTokenStream, TokenStream};
@@ -357,12 +354,8 @@ mod buffered_token_stream {
 #[cfg(test)]
 mod tests {
     use crate::token::tokens::{
-        ident_like_token::IdentLikeToken,
-        ident_token::IdentToken,
-        numeric_token::{Number, NumericToken},
-        simple_token::{Colon, Semicolon, SimpleToken},
-        token::{DelimToken, Token},
-        whitespace_token::WhitespaceToken,
+        DelimToken, IdentLikeToken, IdentToken, Number, NumericToken, SimpleToken, Token,
+        WhitespaceToken,
     };
 
     use super::TokenStream;

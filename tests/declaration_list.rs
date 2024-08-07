@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use ccss::{
     parse::{
         component_value::ComponentValue,
-        declaration::{Declaration, DeclarationParseListError, ParseEndReason},
+        declaration::{Declaration, DeclarationParseListError},
     },
     token::stream::TokenStream,
 };

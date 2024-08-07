@@ -83,7 +83,7 @@ macro_rules! define_literals {
 pub mod error {
     use serde::Deserialize;
 
-    use super::literal::{HasConstLiteral, Literal};
+    use super::literal::Literal;
 
     define_literals!(
         pub type ErrorLiteral = HasErrorLiteral<"error">;
@@ -214,12 +214,8 @@ mod serde_seq_flatten {
 }
 
 pub mod component_value {
-    use std::marker::PhantomData;
 
-    use serde::{
-        de::{value::SeqAccessDeserializer, Visitor},
-        Deserialize,
-    };
+    use serde::Deserialize;
 
     use ccss::parse::component_value::ComponentValue as Parsed;
 
@@ -312,8 +308,8 @@ pub mod component_value {
     }
 
     impl<'a> Number<&'a str> {
-        fn from_parsed(t: ccss::token::tokens::numeric_token::Number<'a>) -> Number<&'a str> {
-            use ccss::token::tokens::numeric_token::NumberKind;
+        fn from_parsed(t: ccss::token::tokens::Number<'a>) -> Number<&'a str> {
+            use ccss::token::tokens::NumberKind;
 
             let representation = t.full_as_str();
 
@@ -404,10 +400,7 @@ pub mod component_value {
 
     impl<'a> ComponentValue<&'a str> {
         pub(crate) fn from_parsed(v: Parsed<'a>) -> Self {
-            use ccss::token::tokens::{
-                ident_like_token::IdentLikeToken, ident_token::IdentToken,
-                numeric_token::NumericToken, token::Token,
-            };
+            use ccss::token::tokens::{IdentLikeToken, NumericToken, Token};
             match v {
                 Parsed::PreservedTokens(t) => match t {
                     Token::Whitespace(_) => Self::Whitespace(Whitespace),
@@ -497,10 +490,7 @@ pub mod component_value {
 pub mod declaration {
     use serde::Deserialize;
 
-    use super::{
-        component_value::ComponentValue,
-        literal::{HasConstLiteral, Literal},
-    };
+    use super::component_value::ComponentValue;
 
     define_literals!(
         type DeclarationLiteral = HasDeclarationLiteral<"declaration">;
@@ -535,10 +525,7 @@ pub mod declaration {
 pub mod at_rule {
     use serde::Deserialize;
 
-    use super::{
-        component_value::{Block, ComponentValue},
-        literal::{HasConstLiteral, Literal},
-    };
+    use super::component_value::ComponentValue;
 
     define_literals!(
         type AtRuleLiteral = HasAtRuleLiteral<"at-rule">;

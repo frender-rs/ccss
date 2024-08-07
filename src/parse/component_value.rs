@@ -3,9 +3,8 @@ use crate::token::{
         BufferedToken, BufferedTokenStream, CopyableTokenStream, TokenStream, TokenStreamProcess,
     },
     tokens::{
-        ident_like_token::{FunctionToken, IdentLikeToken},
-        simple_token::{Comma, RightCurlyBracket, RightParenthesis, Semicolon, SimpleToken},
-        token::{SimpleBlockSurroundingTokens, Token, TokenParseError, TokenParseResult},
+        Comma, FunctionToken, IdentLikeToken, RightCurlyBracket, RightParenthesis, Semicolon,
+        SimpleBlockSurroundingTokens, SimpleToken, Token, TokenParseError, TokenParseResult,
     },
 };
 
