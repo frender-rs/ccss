@@ -5,12 +5,20 @@ use crate::input::Filtered;
 
 pub struct TokenStream<'a>(Filtered<'a>);
 
+impl<'a> std::fmt::Debug for TokenStream<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("TokenStream")
+            .field(&self.0 .0.as_str())
+            .finish()
+    }
+}
+
 /// The next token has been parsed and buffered.
 ///
 /// https://drafts.csswg.org/css-syntax-3/#token-stream-process
 pub type TokenStreamProcess<'a> = BufferedTokenStream<'a, 1>;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct CopyableTokenStream<'a> {
     inner: &'a str,
 }
@@ -77,6 +85,10 @@ impl<'a> TokenStream<'a> {
 
         input.try_discard_whitespace()
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.0 .0.as_str().is_empty()
+    }
 }
 
 mod buffered_token_stream {
@@ -91,18 +103,22 @@ mod buffered_token_stream {
 
     enum DummyForToken {}
 
-    const DUMMY_TOKEN: Token = Token::WhitespaceToken(WhitespaceToken::ONE_SPACE);
+    const DUMMY_TOKEN: Token = Token::Whitespace(WhitespaceToken::ONE_SPACE);
 
     const DUMMY_BUF_TOKEN: BufferedToken = BufferedToken {
         token: DUMMY_TOKEN,
         token_and_remaining: TokenStream::EMPTY.to_copyable(),
     };
 
+    impl<'a> ConstDummyValueFor<Token<'a>> for DummyForToken {
+        const DUMMY_VALUE: Token<'a> = DUMMY_TOKEN;
+    }
+
     impl<'a> ConstDummyValueFor<BufferedToken<'a>> for DummyForToken {
         const DUMMY_VALUE: BufferedToken<'a> = DUMMY_BUF_TOKEN;
     }
 
-    #[derive(Clone, Copy)]
+    #[derive(Debug, Clone, Copy)]
     pub struct BufferedToken<'a> {
         pub token: Token<'a>,
         /// token + remaining
@@ -120,6 +136,15 @@ mod buffered_token_stream {
         remaining: TokenStream<'a>,
         // if let Some(first) = buf.first(),
         // assert first.token_and_remaining == buf.map(|buf| buf.token).collect() + remaining
+    }
+
+    impl<'a, const N: usize> std::fmt::Debug for BufferedTokenStream<'a, N> {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct("BufferedTokenStream")
+                .field("buf", &self.buffered_tokens().as_slice())
+                .field("remaining", &self.remaining.0 .0.as_str())
+                .finish()
+        }
     }
 
     pub struct BufferedTokenStreamUnwrapOne<'a> {
@@ -144,8 +169,22 @@ mod buffered_token_stream {
     }
 
     impl<'a, const N: usize> BufferedTokenStream<'a, N> {
-        // all parsed tokens and remaining
-        pub(crate) const fn tokens_and_remaining(&self) -> TokenStream<'a> {
+        const fn buffered_tokens(&self) -> ArrayVec<Token<'a>, DummyForToken, N> {
+            let mut res = ArrayVec::EMPTY;
+
+            let mut i = 0;
+            let buf = self.buf.as_slice();
+
+            while i < buf.len() {
+                res = res.with_push(buf[i].token);
+                i += 1;
+            }
+
+            res
+        }
+
+        /// all parsed tokens and remaining
+        pub const fn tokens_and_remaining(&self) -> TokenStream<'a> {
             match self.buf.first() {
                 Some(buf_token) => buf_token.token_and_remaining.to_token_stream(),
                 // None includes the condition when N == 0
@@ -278,7 +317,7 @@ mod buffered_token_stream {
 
         pub(crate) const fn try_discard_whitespace(mut self) -> TokenParseResult<'a, Self> {
             () = Self::ASSERT_N_IS_NOT_0;
-            while matches!(self.next_token_copied(), Some(Token::WhitespaceToken(_))) {
+            while matches!(self.next_token_copied(), Some(Token::Whitespace(_))) {
                 match self.try_next() {
                     Ok((_, this)) => self = this,
                     Err(err) => return Err(err),
@@ -296,5 +335,57 @@ mod buffered_token_stream {
                 remaining: input,
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::token::tokens::{
+        ident_like_token::IdentLikeToken,
+        ident_token::IdentToken,
+        numeric_token::{Number, NumericToken},
+        simple_token::{Colon, Semicolon, SimpleToken},
+        token::{DelimToken, Token},
+        whitespace_token::WhitespaceToken,
+    };
+
+    use super::TokenStream;
+
+    #[test]
+    fn declaration_list() {
+        let mut input = TokenStream::new("a:b; c:d 42!important;\n");
+
+        let mut tokens = std::iter::from_fn(|| {
+            let t;
+            (t, input) = std::mem::replace(&mut input, TokenStream::EMPTY)
+                .try_next()
+                .unwrap();
+
+            t
+        });
+
+        const EXPECTED: [Token; 14] = [
+            Token::IdentLike(IdentLikeToken::Ident(IdentToken::new_const("a"))),
+            Token::Simple(SimpleToken::COLON),
+            Token::IdentLike(IdentLikeToken::Ident(IdentToken::new_const("b"))),
+            Token::Simple(SimpleToken::SEMICOLON),
+            Token::Whitespace(WhitespaceToken::ONE_SPACE),
+            Token::IdentLike(IdentLikeToken::Ident(IdentToken::new_const("c"))),
+            Token::Simple(SimpleToken::COLON),
+            Token::IdentLike(IdentLikeToken::Ident(IdentToken::new_const("d"))),
+            Token::Whitespace(WhitespaceToken::ONE_SPACE),
+            Token::Numeric(NumericToken::Number(Number::new_integer("42"))),
+            Token::Delim(DelimToken::BANG),
+            Token::IdentLike(IdentLikeToken::Ident(IdentToken::new_const("important"))),
+            Token::Simple(SimpleToken::SEMICOLON),
+            Token::Whitespace(WhitespaceToken::new("\n")),
+        ];
+
+        let parsed_tokens =
+            std::array::from_fn::<_, { EXPECTED.len() }, _>(|_| tokens.next().unwrap());
+
+        assert_eq!(parsed_tokens, EXPECTED);
+
+        assert_eq!(tokens.next(), None);
     }
 }

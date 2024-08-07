@@ -3,7 +3,7 @@ pub mod whitespace_token {
 
     use crate::input::Filtered;
 
-    #[derive(Debug, Clone, Copy)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct WhitespaceToken<'a>(&'a str);
 
     impl<'a> WhitespaceToken<'a> {
@@ -19,6 +19,17 @@ pub mod whitespace_token {
             let v = konst::option::map!(original.str_before_non_empty(&new_stream), Self);
 
             (v, new_stream)
+        }
+
+        pub(crate) const fn new(s: &'a str) -> Self {
+            let (this, stream) = Self::consume(Filtered::new(s));
+
+            if let Some(this) = this {
+                stream.assert_empty();
+                this
+            } else {
+                panic!("expect whitespace")
+            }
         }
     }
 
@@ -59,13 +70,14 @@ mod string_token {
 
     use super::{errors::Eof, escaped_code_point::EscapedCodePoint};
 
-    #[derive(Debug, Clone, Copy)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct StringToken<'a> {
         full: &'a str,
         starting_code_point_str: &'a str,
         ending_code_point_str: &'a str,
     }
 
+    #[derive(Debug)]
     pub enum StringTokenParseError<'a> {
         Eof {
             full: &'a str,
@@ -200,51 +212,56 @@ pub mod token {
         whitespace_token::WhitespaceToken,
     };
 
-    #[derive(Debug, Clone, Copy)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct CdoToken<'a> {
         full: &'a str,
     }
 
-    #[derive(Debug, Clone, Copy)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct CdcToken<'a> {
         full: &'a str,
     }
 
-    #[derive(Debug, Clone, Copy)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct AtKeywordToken<'a> {
         full: &'a str,
         ident: IdentSequence<'a>,
     }
 
-    #[derive(Debug, Clone, Copy)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct DelimToken<'a> {
         full: &'a str,
         value: FilteredChar,
     }
 
     impl<'a> DelimToken<'a> {
+        pub const BANG: Self = Self {
+            full: "!",
+            value: FilteredChar::from_str("!"),
+        };
+
         pub const fn value(&self) -> FilteredChar {
             self.value
         }
     }
 
-    #[derive(Debug, Clone, Copy)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct HashToken<'a> {
         full: &'a str,
         kind: HashTokenKind,
         value: IdentSequence<'a>,
     }
 
-    #[derive(Debug, Clone, Copy)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum HashTokenKind {
         Empty,
         /// type flag is "id"
         Id,
     }
 
-    #[derive(Debug, Clone, Copy)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum Token<'a> {
-        WhitespaceToken(WhitespaceToken<'a>),
+        Whitespace(WhitespaceToken<'a>),
         StringToken(StringToken<'a>),
         Simple(SimpleToken<'a>),
         Numeric(NumericToken<'a>),
@@ -256,6 +273,7 @@ pub mod token {
         Hash(HashToken<'a>),
     }
 
+    #[derive(Debug)]
     pub enum TokenParseError<'a> {
         StringToken(StringTokenParseError<'a>),
         Url(UrlParseError<'a>),
@@ -284,7 +302,7 @@ pub mod token {
 
             let (wst, stream) = WhitespaceToken::consume(stream);
             if let Some(wst) = wst {
-                return out(Self::WhitespaceToken(wst), stream);
+                return out(Self::Whitespace(wst), stream);
             }
 
             let stream = match StringToken::consume(stream) {
@@ -403,6 +421,13 @@ pub mod token {
                     // TODO: this is a parse error. Return a <delim-token> with its value set to the current input code point
                     ShouldProcessDelimToken
                 }
+                c if is_ident_code_point(c) => match IdentLikeToken::consume(before_delim) {
+                    Ok((Some(ident), stream)) => return out(Self::IdentLike(ident), stream),
+                    Ok((None, _)) => {
+                        unreachable!()
+                    }
+                    Err(err) => return Err(TokenParseError::Url(err)),
+                },
                 _ => ShouldProcessDelimToken,
             };
 
@@ -447,7 +472,7 @@ pub mod token {
         }
 
         pub(crate) const fn is_whitespace(&self) -> bool {
-            matches!(self, Self::WhitespaceToken(_))
+            matches!(self, Self::Whitespace(_))
         }
     }
 
@@ -509,15 +534,27 @@ pub mod simple_token {
     macro_rules! define_simple_tokens {
         (
             $SimpleToken:ident ($(
-                $name:ident ($e:expr)
+                $const_name:ident = $name:ident ($e:expr)
             ),* $(,)?)
         ) => {
             $(
-                #[derive(Debug, Clone, Copy)]
+                #[derive(Debug, Clone, Copy, PartialEq, Eq)]
                 pub struct $name<'a>(&'a str);
 
                 impl $name<'_> {
                     pub const CHAR: char = $e;
+                    const CHAR_BYTE: [u8; 1] = {
+                        assert!(Self::CHAR.is_ascii());
+                        let byte = Self::CHAR as u8;
+                        [byte]
+                    };
+                    const CHAR_STR: &'static str = {
+                        match std::str::from_utf8(&Self::CHAR_BYTE) {
+                            Ok(s) => s,
+                            Err(_) => unreachable!(),
+                        }
+                    };
+                    pub const DEFAULT: Self = Self(Self::CHAR_STR);
                 }
 
                 impl<'a> $name<'a> {
@@ -535,7 +572,7 @@ pub mod simple_token {
                 }
             )*
 
-            #[derive(Debug, Clone, Copy)]
+            #[derive(Debug, Clone, Copy, PartialEq, Eq)]
             pub enum $SimpleToken<'a> {
                 $(
                     $name($name<'a>),
@@ -543,6 +580,9 @@ pub mod simple_token {
             }
 
             impl<'a> $SimpleToken<'a> {
+                $(
+                    pub const $const_name: Self = Self::$name($name::DEFAULT);
+                )*
                 pub const fn consume(stream: Filtered<'a>) -> (Option<Self>, Filtered<'a>) {
                     match stream.copy().next() {
                         Some((fc, new_stream)) => {
@@ -564,38 +604,38 @@ pub mod simple_token {
     }
 
     define_simple_tokens!(SimpleToken(
-        LeftParenthesis('\u{0028}'),
-        RightParenthesis('\u{0029}'),
-        Comma('\u{002C}'),
-        Colon('\u{003A}'),
-        Semicolon('\u{003B}'),
-        LeftSquareBracket('\u{005B}'),
-        RightSquareBracket('\u{005D}'),
-        LeftCurlyBracket('\u{007B}'),
-        RightCurlyBracket('\u{007D}'),
+        LEFT_PARENTHESIS = LeftParenthesis('\u{0028}'),
+        RIGHT_PARENTHESIS = RightParenthesis('\u{0029}'),
+        COMMA = Comma('\u{002C}'),
+        COLON = Colon('\u{003A}'),
+        SEMICOLON = Semicolon('\u{003B}'),
+        LEFT_SQUARE_BRACKET = LeftSquareBracket('\u{005B}'),
+        RIGHT_SQUARE_BRACKET = RightSquareBracket('\u{005D}'),
+        LEFT_CURLY_BRACKET = LeftCurlyBracket('\u{007B}'),
+        RIGHT_CURLY_BRACKET = RightCurlyBracket('\u{007D}'),
     ));
 }
 
-mod numeric_token {
+pub mod numeric_token {
 
     use crate::input::{code_points::PERCENTAGE_SIGN, Filtered};
 
     use super::ident_sequence::IdentSequence;
 
-    #[derive(Debug, Clone, Copy)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum NumberKind {
         Integer,
         Number,
     }
 
-    #[derive(Debug, Clone, Copy)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum NumberSign {
         Positive,
         Negative,
     }
 
-    #[derive(Debug, Clone, Copy)]
-    struct Number<'a> {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct Number<'a> {
         full: &'a str,
         kind: NumberKind,
         sign: Option<NumberSign>,
@@ -673,26 +713,43 @@ mod numeric_token {
             )
         }
 
+        pub(crate) const fn new(full: &'a str) -> Self {
+            let (this, remaining) = Self::consume(Filtered::new(full));
+            match this {
+                Some(this) => {
+                    remaining.assert_empty();
+                    this
+                }
+                None => panic!("not a Number"),
+            }
+        }
+
+        pub(crate) const fn new_integer(full: &'a str) -> Self {
+            let this = Self::new(full);
+            assert!(matches!(this.kind, NumberKind::Integer), "not an integer");
+            this
+        }
+
         // https://drafts.csswg.org/css-syntax-3/#starts-with-a-number
         // fn would_start(stream: Filtered<'_>) {
         //     1
         // }
     }
 
-    #[derive(Debug, Clone, Copy)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct DimensionToken<'a> {
         number: Number<'a>,
         unit: IdentSequence<'a>,
     }
 
-    #[derive(Debug, Clone, Copy)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct PercentageToken<'a> {
         // TODO: spec doesn't keep its type (number.kind)
         pub number: Number<'a>,
         pub percentage: &'a str,
     }
 
-    #[derive(Debug, Clone, Copy)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum NumericToken<'a> {
         Number(Number<'a>),
         Percentage(PercentageToken<'a>),
@@ -749,21 +806,21 @@ pub mod ident_like_token {
     use super::whitespace_token::WhitespaceToken;
     use super::{ident_sequence::IdentSequence, ident_token::IdentToken};
 
-    #[derive(Debug, Clone, Copy)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct UrlToken<'a> {
         full: &'a str,
         url: IdentSequence<'a>,
         value: &'a str,
     }
 
-    #[derive(Debug, Clone, Copy)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct FunctionToken<'a> {
         full: &'a str,
         value: IdentSequence<'a>,
     }
 
     /// https://drafts.csswg.org/css-syntax-3/#consume-ident-like-token
-    #[derive(Debug, Clone, Copy)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum IdentLikeToken<'a> {
         Ident(IdentToken<'a>),
         Function(FunctionToken<'a>),
@@ -839,6 +896,7 @@ pub mod ident_like_token {
         }
     }
 
+    #[derive(Debug)]
     pub enum UrlParseError<'a> {
         BadUrl { remaining: Filtered<'a> },
         Eof,
@@ -912,7 +970,7 @@ pub mod ident_token {
     use crate::input::{code_points::LEFT_PARENTHESIS, Filtered};
 
     /// https://drafts.csswg.org/css-syntax-3/#consume-ident-like-token
-    #[derive(Debug, Clone, Copy)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct IdentToken<'a>(IdentSequence<'a>);
 
     impl<'a> IdentToken<'a> {
@@ -1073,7 +1131,7 @@ mod ident_sequence {
     use super::escaped_code_point::EscapedCodePoint;
 
     /// https://drafts.csswg.org/css-syntax-3/#consume-name
-    #[derive(Debug, Clone, Copy)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct IdentSequence<'a>(&'a str);
 
     impl<'a> IdentSequence<'a> {

@@ -11,6 +11,14 @@ pub struct ArrayVec<T, D: ConstDummyValueFor<T>, const N: usize> {
     len: usize,
 }
 
+impl<T: std::fmt::Debug, D: ConstDummyValueFor<T>, const N: usize> std::fmt::Debug
+    for ArrayVec<T, D, N>
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("ArrayVec").field(&self.as_slice()).finish()
+    }
+}
+
 impl<T, D: ConstDummyValueFor<T>, const CAP: usize> ArrayVec<T, D, CAP> {
     pub const EMPTY: Self = Self {
         array: [D::DUMMY_VALUE; CAP],

@@ -17,11 +17,11 @@ use crate::{
 };
 
 use super::component_value::{
-    ComponentValue, ComponentValueConsumeList, List, NestedConfig, RightCurlyBracketAndRemaining,
-    SemicolonAsStopToken,
+    ComponentValue, ComponentValueConsumeList, List, ListParseNotNestedError, NestedConfig,
+    NestedFalse, RightCurlyBracketAndRemaining, SemicolonAsStopToken,
 };
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct Declaration<'a> {
     full: CopyableTokenStream<'a>,
     name: IdentToken<'a>,
@@ -30,27 +30,47 @@ pub struct Declaration<'a> {
     important: Option<Important<'a>>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct Important<'a> {
     full: CopyableTokenStream<'a>,
     bang: DelimToken<'a>,
     important: IdentToken<'a>,
 }
 
+#[derive(Debug)]
 pub enum DeclarationParseExpectToken {
     Ident,
     Colon,
 }
 
-pub enum DeclarationParseError<'a, Nested: NestedConfig> {
-    UnexpectedToken {
-        expect: DeclarationParseExpectToken,
-        buffered_input: BufferedTokenStream<'a, 1>,
-    },
+impl DeclarationParseExpectToken {
+    /// Returns `true` if the declaration parse expect token is [`Ident`].
+    ///
+    /// [`Ident`]: DeclarationParseExpectToken::Ident
+    #[must_use]
+    pub fn is_ident(&self) -> bool {
+        matches!(self, Self::Ident)
+    }
+}
+
+#[derive(Debug)]
+pub struct UnexpectedTokenError<'a> {
+    pub expect: DeclarationParseExpectToken,
+    pub buffered_input: BufferedTokenStream<'a, 1>,
+}
+
+pub(crate) enum DeclarationParseErrorFull<'a, Nested: NestedConfig> {
+    UnexpectedToken(UnexpectedTokenError<'a>),
     ComponentValueList(ListParseFullError<'a, Nested>),
 }
 
-pub(crate) enum ParseEndReason<'a, Nested: NestedConfig> {
+#[derive(Debug)]
+pub enum DeclarationParseError<'a> {
+    UnexpectedToken(UnexpectedTokenError<'a>),
+    ComponentValueList(ListParseNotNestedError<'a>),
+}
+
+pub(crate) enum ParseEndReasonFull<'a, Nested: NestedConfig> {
     NextIsRightCurlyBracket(
         RightCurlyBracketAndRemaining<'a>,
         Nested::RightCurlyBracketIsOk,
@@ -59,7 +79,22 @@ pub(crate) enum ParseEndReason<'a, Nested: NestedConfig> {
     Eof,
 }
 
-impl<'a, Nested: NestedConfig> DeclarationParseError<'a, Nested> {
+impl<'a> ParseEndReasonFull<'a, NestedFalse> {
+    const fn into_nested_false(self) -> ParseEndReason<'a> {
+        match self {
+            ParseEndReasonFull::NextIsRightCurlyBracket(_, never) => match never {},
+            ParseEndReasonFull::NextIsStopToken(v) => ParseEndReason::NextIsStopToken(v),
+            ParseEndReasonFull::Eof => ParseEndReason::Eof,
+        }
+    }
+}
+
+pub enum ParseEndReason<'a> {
+    NextIsStopToken(TokenAndRemaining<'a, Semicolon<'a>>),
+    Eof,
+}
+
+impl<'a, Nested: NestedConfig> DeclarationParseErrorFull<'a, Nested> {
     const fn Token(err: TokenParseError<'a>) -> Self {
         Self::ComponentValueList(ListParseFullError::ComponentValue(
             super::component_value::ComponentValueParseError::Token(err),
@@ -67,10 +102,33 @@ impl<'a, Nested: NestedConfig> DeclarationParseError<'a, Nested> {
     }
 }
 
+impl<'a> DeclarationParseErrorFull<'a, NestedFalse> {
+    const fn into_nested_false(self) -> DeclarationParseError<'a> {
+        match self {
+            DeclarationParseErrorFull::UnexpectedToken(err) => {
+                DeclarationParseError::UnexpectedToken(err)
+            }
+            DeclarationParseErrorFull::ComponentValueList(err) => {
+                DeclarationParseError::ComponentValueList(err.into_not_nested_error())
+            }
+        }
+    }
+}
+
 impl<'a> Declaration<'a> {
+    /// nested is false
+    pub const fn try_consume_next(
+        input: TokenStreamProcess<'a>,
+    ) -> Result<(Self, ParseEndReason<'a>), DeclarationParseError<'a>> {
+        match Self::try_consume_next_with_nested_config::<NestedFalse>(input) {
+            Ok((this, reason)) => Ok((this, reason.into_nested_false())),
+            Err(err) => Err(err.into_nested_false()),
+        }
+    }
+
     pub(crate) const fn try_consume_next_with_nested_config<Nested: NestedConfig>(
         input: TokenStreamProcess<'a>,
-    ) -> Result<(Self, ParseEndReason<'a, Nested>), DeclarationParseError<'a, Nested>> {
+    ) -> Result<(Self, ParseEndReasonFull<'a, Nested>), DeclarationParseErrorFull<'a, Nested>> {
         let name;
         let before_name = input.tokens_and_remaining();
 
@@ -79,19 +137,21 @@ impl<'a> Declaration<'a> {
                 name = n;
                 remaining
             }
-            Ok((_, this)) => {
+            Ok((token, this)) => {
                 // this includes EOF
-                return Err(DeclarationParseError::UnexpectedToken {
-                    expect: DeclarationParseExpectToken::Ident,
-                    buffered_input: this,
-                });
+                return Err(DeclarationParseErrorFull::UnexpectedToken(
+                    UnexpectedTokenError {
+                        expect: DeclarationParseExpectToken::Ident,
+                        buffered_input: this,
+                    },
+                ));
             }
-            Err(err) => return Err(DeclarationParseError::Token(err)),
+            Err(err) => return Err(DeclarationParseErrorFull::Token(err)),
         };
 
         let input = match input.try_discard_whitespace() {
             Ok(v) => v,
-            Err(err) => return Err(DeclarationParseError::Token(err)),
+            Err(err) => return Err(DeclarationParseErrorFull::Token(err)),
         };
 
         let colon;
@@ -102,27 +162,27 @@ impl<'a> Declaration<'a> {
             }
             Ok((_, this)) => {
                 // this includes EOF
-                return Err(DeclarationParseError::UnexpectedToken {
-                    expect: DeclarationParseExpectToken::Colon,
-                    buffered_input: this,
-                });
+                return Err(DeclarationParseErrorFull::UnexpectedToken(
+                    UnexpectedTokenError {
+                        expect: DeclarationParseExpectToken::Colon,
+                        buffered_input: this,
+                    },
+                ));
             }
-            Err(err) => return Err(DeclarationParseError::Token(err)),
+            Err(err) => return Err(DeclarationParseErrorFull::Token(err)),
         };
         let after_colon = input.tokens_and_remaining_to_copyable();
 
         let input = match input.try_discard_whitespace() {
             Ok(v) => v,
-            Err(err) => return Err(DeclarationParseError::Token(err)),
+            Err(err) => return Err(DeclarationParseErrorFull::Token(err)),
         };
 
         enum Dummy {}
 
         impl<'a> ConstDummyValueFor<ValueAndRemaining<'a>> for Dummy {
             const DUMMY_VALUE: ValueAndRemaining<'a> = ValueAndRemaining {
-                cv: ComponentValue::PreservedTokens(Token::WhitespaceToken(
-                    WhitespaceToken::ONE_SPACE,
-                )),
+                cv: ComponentValue::PreservedTokens(Token::Whitespace(WhitespaceToken::ONE_SPACE)),
                 remaining: TokenStream::EMPTY.to_copyable(),
                 full: TokenStream::EMPTY.to_copyable(),
             };
@@ -322,7 +382,7 @@ impl<'a> Declaration<'a> {
                             continue;
                         }
                         NextFull::NextIsRightCurlyBracket(a, b) => {
-                            ParseEndReason::NextIsRightCurlyBracket(a, b)
+                            ParseEndReasonFull::NextIsRightCurlyBracket(a, b)
                         }
                         NextFull::NextIsStopToken(TokenAndRemaining {
                             token,
@@ -330,13 +390,13 @@ impl<'a> Declaration<'a> {
                             full,
                         }) => {
                             let token = token.into_semicolon();
-                            ParseEndReason::NextIsStopToken(TokenAndRemaining {
+                            ParseEndReasonFull::NextIsStopToken(TokenAndRemaining {
                                 token,
                                 remaining,
                                 full,
                             })
                         }
-                        NextFull::Eof => ParseEndReason::Eof,
+                        NextFull::Eof => ParseEndReasonFull::Eof,
                     };
 
                     let after_last = match values.last() {

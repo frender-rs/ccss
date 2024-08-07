@@ -26,7 +26,7 @@ pub struct Function<'a> {
     right_parenthesis: RightParenthesis<'a>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct List<'a> {
     pub full: CopyableTokenStream<'a>,
     pub len: usize,
@@ -119,6 +119,7 @@ pub struct SimpleBlock<'a> {
     surrounding: SimpleBlockSurroundingTokens<'a>,
 }
 
+#[derive(Debug)]
 pub enum ComponentValueParseError<'a> {
     /// unexpected eof after SimpleBlock's starting_token or Function's function_token
     Eof,
@@ -257,7 +258,7 @@ pub(crate) enum ListParseFullError<'a, Nested: NestedConfig> {
 }
 
 impl<'a> ListParseFullError<'a, NestedFalse> {
-    const fn into_not_nested_error(self) -> ListParseNotNestedError<'a> {
+    pub(crate) const fn into_not_nested_error(self) -> ListParseNotNestedError<'a> {
         match self {
             ListParseFullError::ComponentValue(v) => ListParseNotNestedError::ComponentValue(v),
             ListParseFullError::UnexpectedRightCurlyBracket(v, ()) => {
@@ -267,6 +268,7 @@ impl<'a> ListParseFullError<'a, NestedFalse> {
     }
 }
 
+#[derive(Debug)]
 pub enum ListParseNotNestedError<'a> {
     ComponentValue(ComponentValueParseError<'a>),
     UnexpectedRightCurlyBracket(RightCurlyBracketAndRemaining<'a>),
@@ -379,6 +381,7 @@ impl<'a> ComponentValueConsumeList<'a> {
     }
 }
 
+#[derive(Debug)]
 pub struct TokenAndRemaining<'a, T> {
     pub token: T,
     /// after token

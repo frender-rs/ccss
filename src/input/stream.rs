@@ -7,10 +7,27 @@ use super::code_points::LF;
 /// https://drafts.csswg.org/css-syntax-3/#css-filter-code-points
 pub struct Filtered<'a>(pub Chars<'a>);
 
-#[derive(Debug, Clone, Copy)]
+impl<'a> std::fmt::Debug for Filtered<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("Filtered").field(&self.0.as_str()).finish()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FilteredChar(char);
 
 impl FilteredChar {
+    /// Panics if `s` contains not exactly one [`FilteredChar`].
+    pub const fn from_str(s: &str) -> Self {
+        match Filtered::new(s).next() {
+            Some((c, stream)) => {
+                assert!(stream.next().is_none(), "unexpected remaining code points");
+                c
+            }
+            None => panic!("expect one code point"),
+        }
+    }
+
     pub const fn is_digit(&self) -> bool {
         self.0.is_ascii_digit()
     }
@@ -60,6 +77,10 @@ impl<'a> Filtered<'a> {
         }
 
         (res, self)
+    }
+
+    pub(crate) const fn assert_empty(&self) {
+        assert!(self.0.as_str().is_empty(), "unexpected remaining tokens")
     }
 }
 
