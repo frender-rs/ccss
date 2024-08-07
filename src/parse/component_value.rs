@@ -1,7 +1,6 @@
 use crate::token::{
     stream::{
-        BufferedToken, BufferedTokenStream, BufferedTokenStreamUnwrapOne, CopyableTokenStream,
-        TokenStream, TokenStreamProcess,
+        BufferedToken, BufferedTokenStream, CopyableTokenStream, TokenStream, TokenStreamProcess,
     },
     tokens::{
         ident_like_token::{FunctionToken, IdentLikeToken},
@@ -45,12 +44,9 @@ impl<'a> Function<'a> {
     ) -> Result<(Self, TokenStream<'a>), ComponentValueParseError<'a>> {
         let original = input.tokens_and_remaining();
         let Some((function_token, input)) = (match input.try_unwrap_one() {
-            Ok(BufferedTokenStreamUnwrapOne {
-                buf_token:
-                    BufferedToken {
-                        token_and_remaining: _,
-                        token,
-                    },
+            Ok(TokenAndRemaining {
+                token,
+                full: _,
                 remaining,
             }) => match token.as_function_token() {
                 Some(token) => Some((token, remaining)),
@@ -154,15 +150,14 @@ impl<'a> SimpleBlock<'a> {
             input = {
                 let before_token = input.tokens_and_remaining();
 
-                let Ok(BufferedTokenStreamUnwrapOne {
-                    buf_token,
+                let Ok(TokenAndRemaining {
+                    token,
+                    full: token_and_remaining,
                     remaining: input,
                 }) = input.try_unwrap_one()
                 else {
                     return Err(ComponentValueParseError::Eof);
                 };
-
-                let token = buf_token.token;
 
                 if let Some(surrounding) = starting_token.try_surround_with(token) {
                     // ending token
@@ -179,7 +174,10 @@ impl<'a> SimpleBlock<'a> {
                     ));
                 } else {
                     match ComponentValue::try_consume_one(TokenStreamProcess::new_buffer_filled(
-                        [buf_token],
+                        [BufferedToken {
+                            token,
+                            token_and_remaining: token_and_remaining.to_copyable(),
+                        }],
                         input,
                     )) {
                         Ok((_, input)) => {
@@ -386,7 +384,8 @@ pub struct TokenAndRemaining<'a, T> {
     pub token: T,
     /// after token
     pub remaining: TokenStream<'a>,
-    /// full = token + remaining
+    /// `full` means its struct, which is [`TokenAndRemaining`],
+    /// which means `full == token + remaining`
     pub full: TokenStream<'a>,
 }
 

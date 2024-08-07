@@ -2,14 +2,14 @@ use crate::{
     parse::component_value::{ListParseFullError, NextFull, TokenAndRemaining},
     token::{
         stream::{
-            BufferedToken, BufferedTokenStream, BufferedTokenStreamUnwrapOne, CopyableTokenStream,
-            TokenStream, TokenStreamProcess,
+            BufferedToken, BufferedTokenStream, CopyableTokenStream, TokenStream,
+            TokenStreamProcess,
         },
         tokens::{
             ident_like_token::IdentLikeToken,
             ident_token::IdentToken,
             simple_token::{Colon, Semicolon, SimpleToken},
-            token::{DelimToken, Token, TokenParseError},
+            token::{DelimToken, Token, TokenParseError, TokenParseResult},
             whitespace_token::WhitespaceToken,
         },
     },
@@ -129,16 +129,37 @@ impl<'a> Declaration<'a> {
     pub(crate) const fn try_consume_next_with_nested_config<Nested: NestedConfig>(
         input: TokenStreamProcess<'a>,
     ) -> Result<(Self, ParseEndReasonFull<'a, Nested>), DeclarationParseErrorFull<'a, Nested>> {
-        let name;
-        let before_name = input.tokens_and_remaining();
-
-        let input = match input.try_next() {
-            Ok((Some(Token::IdentLike(IdentLikeToken::Ident(n))), remaining)) => {
-                name = n;
-                remaining
+        match input.try_unwrap_one() {
+            Ok(TokenAndRemaining {
+                token: Token::IdentLike(IdentLikeToken::Ident(name)),
+                remaining,
+                full,
+            }) => Self::try_consume_after_name(TokenAndRemaining {
+                token: name,
+                remaining,
+                full,
+            }),
+            Ok(TokenAndRemaining {
+                token,
+                full: token_and_remaining,
+                remaining,
+            }) => {
+                // unexpected token
+                return Err(DeclarationParseErrorFull::UnexpectedToken(
+                    UnexpectedTokenError {
+                        expect: DeclarationParseExpectToken::Ident,
+                        buffered_input: BufferedTokenStream::new_buffer_filled(
+                            [BufferedToken {
+                                token,
+                                token_and_remaining: token_and_remaining.to_copyable(),
+                            }],
+                            remaining,
+                        ),
+                    },
+                ));
             }
-            Ok((token, this)) => {
-                // this includes EOF
+            Err(this) => {
+                // EOF
                 return Err(DeclarationParseErrorFull::UnexpectedToken(
                     UnexpectedTokenError {
                         expect: DeclarationParseExpectToken::Ident,
@@ -146,8 +167,17 @@ impl<'a> Declaration<'a> {
                     },
                 ));
             }
-            Err(err) => return Err(DeclarationParseErrorFull::Token(err)),
-        };
+        }
+    }
+
+    pub(crate) const fn try_consume_after_name<Nested: NestedConfig>(
+        parsed_name: TokenAndRemaining<'a, IdentToken<'a>>,
+    ) -> Result<(Self, ParseEndReasonFull<'a, Nested>), DeclarationParseErrorFull<'a, Nested>> {
+        let TokenAndRemaining {
+            token: name,
+            remaining: input,
+            full: before_name,
+        } = parsed_name;
 
         let input = match input.try_discard_whitespace() {
             Ok(v) => v,
@@ -463,4 +493,83 @@ const fn str_matches_important_ascii_case_insensitive(s: &str) -> bool {
             b't' | b'T',
         ]
     )
+}
+
+/// [Parse a list of declarations](https://www.w3.org/TR/css-syntax-3/#parse-list-of-declarations)
+/// excluding at-rules.
+///
+/// `nested` is false
+pub struct DeclarationParseList<'a> {
+    inner: TokenParseResult<'a, TokenStreamProcess<'a>>,
+}
+
+impl<'a> DeclarationParseList<'a> {
+    pub const fn try_next(self) -> Result<Option<(Declaration<'a>, Self)>, ()> {
+        match self.inner {
+            Ok(mut input) => {
+                loop {
+                    match input.try_unwrap_one() {
+                        Ok(TokenAndRemaining {
+                            token,
+                            remaining,
+                            full,
+                        }) => match token {
+                            Token::Whitespace(_) | Token::Simple(SimpleToken::Semicolon(_)) => {
+                                // Do nothing.
+                                match remaining.try_process() {
+                                    Ok(remaining) => input = remaining,
+                                    Err(err) => return Err(err),
+                                };
+                            }
+                            Token::IdentLike(IdentLikeToken::Ident(name)) => {
+                                match Declaration::try_consume_after_name::<NestedFalse>(
+                                    TokenAndRemaining {
+                                        token: name,
+                                        remaining,
+                                        full,
+                                    },
+                                ) {
+                                    Ok((d, reason)) => {
+                                        return Ok(Some((
+                                            d,
+                                            match reason {
+                                                ParseEndReasonFull::NextIsRightCurlyBracket(
+                                                    _,
+                                                    never,
+                                                ) => match never {},
+                                                ParseEndReasonFull::NextIsStopToken(
+                                                    TokenAndRemaining {
+                                                        token,
+                                                        remaining,
+                                                        full,
+                                                    },
+                                                ) => {
+                                                    // discard the semicolon
+                                                    Self {
+                                                        inner: remaining.try_process(),
+                                                    }
+                                                }
+                                                ParseEndReasonFull::Eof => Self {
+                                                    inner: Ok(TokenStreamProcess::EMPTY),
+                                                },
+                                            },
+                                        )));
+                                    }
+                                    Err(_) => todo!(),
+                                }
+                            }
+                            _ => {
+                                return Err();
+                            }
+                        },
+                        Err(_) => {
+                            // EOF
+                            return Ok(None);
+                        }
+                    }
+                }
+            }
+            Err(err) => todo!(),
+        }
+    }
 }

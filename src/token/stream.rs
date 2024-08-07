@@ -1,4 +1,4 @@
-pub use buffered_token_stream::{BufferedToken, BufferedTokenStream, BufferedTokenStreamUnwrapOne};
+pub use buffered_token_stream::{BufferedToken, BufferedTokenStream};
 
 use super::tokens::token::{Token, TokenParseOutput, TokenParseResult};
 use crate::input::Filtered;
@@ -77,7 +77,9 @@ impl<'a> TokenStream<'a> {
     }
 
     /// https://drafts.csswg.org/css-syntax-3/#token-stream-discard-whitespace
-    pub(crate) fn try_discard_whitespace(self) -> TokenParseResult<'a, BufferedTokenStream<'a, 1>> {
+    pub(crate) const fn try_discard_whitespace(
+        self,
+    ) -> TokenParseResult<'a, BufferedTokenStream<'a, 1>> {
         let input = match self.try_buffer_n::<1>() {
             Ok(input) => input,
             Err(err) => return Err(err),
@@ -93,11 +95,14 @@ impl<'a> TokenStream<'a> {
 
 mod buffered_token_stream {
 
-    use crate::token::tokens::{
-        token::{Token, TokenParseResult},
-        whitespace_token::WhitespaceToken,
-    };
     use crate::util::array_vec::{ArrayVec, ConstDummyValueFor};
+    use crate::{
+        parse::component_value::TokenAndRemaining,
+        token::tokens::{
+            token::{Token, TokenParseResult},
+            whitespace_token::WhitespaceToken,
+        },
+    };
 
     use super::{CopyableTokenStream, TokenStream};
 
@@ -147,20 +152,22 @@ mod buffered_token_stream {
         }
     }
 
-    pub struct BufferedTokenStreamUnwrapOne<'a> {
-        // buf_token.token_and_remaining = buf_token.token + remaining
-        pub buf_token: BufferedToken<'a>,
-        pub remaining: TokenStream<'a>,
-    }
-
     impl<'a> BufferedTokenStream<'a, 1> {
+        /// For `BufferedTokenStream<'a, 1>`, if next token is available,
+        /// it has been parsed and buffered, so it can be unwrapped without parsing.
+        ///
         /// Err(input) implies input is empty
-        pub const fn try_unwrap_one(self) -> Result<BufferedTokenStreamUnwrapOne<'a>, Self> {
-            if let Some(buf_token) = self.buf.first_copied() {
+        pub const fn try_unwrap_one(self) -> Result<TokenAndRemaining<'a, Token<'a>>, Self> {
+            if let Some(BufferedToken {
+                token,
+                token_and_remaining,
+            }) = self.buf.first_copied()
+            {
                 // the only element in self.buf is returned
-                Ok(BufferedTokenStreamUnwrapOne {
-                    buf_token,
+                Ok(TokenAndRemaining {
+                    token,
                     remaining: self.remaining,
+                    full: token_and_remaining.to_token_stream(),
                 })
             } else {
                 Err(self)
@@ -169,6 +176,11 @@ mod buffered_token_stream {
     }
 
     impl<'a, const N: usize> BufferedTokenStream<'a, N> {
+        pub(crate) const EMPTY: Self = Self {
+            buf: ArrayVec::EMPTY,
+            remaining: TokenStream::EMPTY,
+        };
+
         const fn buffered_tokens(&self) -> ArrayVec<Token<'a>, DummyForToken, N> {
             let mut res = ArrayVec::EMPTY;
 
