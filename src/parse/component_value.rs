@@ -41,7 +41,7 @@ impl<'a> List<'a> {
 impl<'a> Function<'a> {
     const fn consume(
         input: TokenStreamProcess<'a>,
-    ) -> Result<(Self, TokenStream<'a>), ComponentValueParseError<'a>> {
+    ) -> Result<(Self, TokenStream<'a>), ComponentValueParseOrTokenError<'a>> {
         let original = input.tokens_and_remaining();
         let Some((function_token, input)) = (match input.try_unwrap_one() {
             Ok(TokenAndRemaining {
@@ -99,10 +99,10 @@ impl<'a> Function<'a> {
                         }
                     }
                     None => {
-                        return Err(ComponentValueParseError::Eof);
+                        return Err(ComponentValueParseOrTokenError::Eof);
                     }
                 },
-                Err(err) => return Err(ComponentValueParseError::Token(err)),
+                Err(err) => return Err(ComponentValueParseOrTokenError::Token(err)),
             }
         }
     }
@@ -116,22 +116,29 @@ pub struct SimpleBlock<'a> {
 }
 
 #[derive(Debug)]
-pub enum ComponentValueParseError<'a> {
+pub enum ComponentValueParseOrTokenError<'a> {
     /// unexpected eof after SimpleBlock's starting_token or Function's function_token
     Eof,
     Token(TokenParseError<'a>),
 }
 
-pub type ComponentValueParseResult<'a, T> = Result<T, ComponentValueParseError<'a>>;
+#[derive(Debug)]
+pub enum ComponentValueParseError<'a> {
+    /// Unexpected eof after SimpleBlock's starting_token or Function's function_token
+    UnexpectedEof,
+    UnexpectedRightCurlyBracket(TokenAndRemaining<'a, RightCurlyBracket<'a>>),
+}
+
+pub type ComponentValueParseResult<'a, T> = Result<T, ComponentValueParseOrTokenError<'a>>;
 
 impl<'a> SimpleBlock<'a> {
     const fn consume(
         input: TokenStreamProcess<'a>,
-    ) -> Result<(Self, TokenStream<'a>), ComponentValueParseError<'a>> {
+    ) -> Result<(Self, TokenStream<'a>), ComponentValueParseOrTokenError<'a>> {
         let before_starting = input.tokens_and_remaining();
         let (token, input) = match input.try_next() {
             Ok(v) => v,
-            Err(err) => return Err(ComponentValueParseError::Token(err)),
+            Err(err) => return Err(ComponentValueParseOrTokenError::Token(err)),
         };
 
         // Discard a token from input.
@@ -156,7 +163,7 @@ impl<'a> SimpleBlock<'a> {
                     remaining: input,
                 }) = input.try_unwrap_one()
                 else {
-                    return Err(ComponentValueParseError::Eof);
+                    return Err(ComponentValueParseOrTokenError::Eof);
                 };
 
                 if let Some(surrounding) = starting_token.try_surround_with(token) {
@@ -184,7 +191,9 @@ impl<'a> SimpleBlock<'a> {
                             value_len += 1;
                             match input.try_process() {
                                 Ok(input) => input,
-                                Err(err) => return Err(ComponentValueParseError::Token(err)),
+                                Err(err) => {
+                                    return Err(ComponentValueParseOrTokenError::Token(err))
+                                }
                             }
                         }
                         Err(err) => return Err(err),
@@ -201,7 +210,7 @@ impl<'a> ComponentValue<'a> {
     /// https://drafts.csswg.org/css-syntax-3/#consume-list-of-components
     const fn try_consume_one(
         input: TokenStreamProcess<'a>,
-    ) -> Result<(Self, TokenStream<'a>), ComponentValueParseError<'a>> {
+    ) -> Result<(Self, TokenStream<'a>), ComponentValueParseOrTokenError<'a>> {
         match input.next_token_copied() {
             Some(Token::Simple(
                 SimpleToken::LeftCurlyBracket(_)
@@ -248,7 +257,7 @@ pub struct ComponentValueConsumeList<'a> {
 }
 
 pub(crate) enum ListParseFullError<'a, Nested: NestedConfig> {
-    ComponentValue(ComponentValueParseError<'a>),
+    ComponentValue(ComponentValueParseOrTokenError<'a>),
     UnexpectedRightCurlyBracket(
         RightCurlyBracketAndRemaining<'a>,
         Nested::RightCurlyBracketIsErr,
@@ -268,7 +277,7 @@ impl<'a> ListParseFullError<'a, NestedFalse> {
 
 #[derive(Debug)]
 pub enum ListParseNotNestedError<'a> {
-    ComponentValue(ComponentValueParseError<'a>),
+    ComponentValue(ComponentValueParseOrTokenError<'a>),
     UnexpectedRightCurlyBracket(RightCurlyBracketAndRemaining<'a>),
 }
 
@@ -358,7 +367,7 @@ impl<'a> ComponentValueConsumeList<'a> {
                                 }
                                 Err(err) => {
                                     return Err(ListParseFullError::ComponentValue(
-                                        ComponentValueParseError::Token(err),
+                                        ComponentValueParseOrTokenError::Token(err),
                                     ))
                                 }
                             },
@@ -387,6 +396,31 @@ pub struct TokenAndRemaining<'a, T> {
     /// `full` means its struct, which is [`TokenAndRemaining`],
     /// which means `full == token + remaining`
     pub full: TokenStream<'a>,
+}
+
+impl<'a> TokenAndRemaining<'a, Token<'a>> {
+    pub(crate) const fn into_input(self) -> TokenStreamProcess<'a> {
+        TokenStreamProcess::new_buffer_filled(
+            [BufferedToken {
+                token: self.token,
+                token_and_remaining: self.full.to_copyable(),
+            }],
+            self.remaining,
+        )
+    }
+}
+
+impl<'a, T> TokenAndRemaining<'a, T> {
+    pub(crate) const fn with_token_const<V>(self, token: V) -> TokenAndRemaining<'a, V>
+    where
+        T: Copy,
+    {
+        TokenAndRemaining {
+            token,
+            remaining: self.remaining,
+            full: self.full,
+        }
+    }
 }
 
 pub(crate) type RightCurlyBracketAndRemaining<'a> = TokenAndRemaining<'a, RightCurlyBracket<'a>>;

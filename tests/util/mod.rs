@@ -481,6 +481,16 @@ pub mod declaration_rule_list {
         AtRule(AtRule<S>),
     }
 
+    impl<S> DeclarationRule<S> {
+        /// Returns `true` if the declaration rule is [`AtRule`].
+        ///
+        /// [`AtRule`]: DeclarationRule::AtRule
+        #[must_use]
+        pub fn is_at_rule(&self) -> bool {
+            matches!(self, Self::AtRule(..))
+        }
+    }
+
     #[test]
     fn test() {
         fn parse_str(s: &str) -> Result<DeclarationRule<&str>, serde_json::Error> {

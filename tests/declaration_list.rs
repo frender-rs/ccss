@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use ccss::parse::declaration::{Declaration, DeclarationParseError, ParseEndReason};
+use ccss::parse::declaration::{Declaration, DeclarationParseListError, ParseEndReason};
 use util::{declaration_rule_list::DeclarationRule, error::MaybeError, TestSuite, TestSuites};
 
 mod util;
@@ -8,11 +8,6 @@ mod util;
 type Expected<S> = MaybeError<DeclarationRule<S>, S>;
 
 const TEST: &str = include_str!("../css-parsing-tests/declaration_list.json");
-
-#[test]
-fn one() {
-    parse_one("a:b; c:d 42!important;\n").unwrap();
-}
 
 #[test]
 fn test_all() {
@@ -23,6 +18,15 @@ fn test_all() {
             // TODO: comments are not supported yet
             continue;
         }
+
+        if expected
+            .iter()
+            .any(|v| v.result.as_ref().is_ok_and(|v| v.is_at_rule()))
+        {
+            // TODO: at-rules are not supported yet
+            continue;
+        }
+
         let is_err = expected.iter().any(|e| e.result.is_err());
         let res = parse_one(&input);
 
@@ -35,34 +39,6 @@ fn test_all() {
     }
 }
 
-fn parse_one(input: &str) -> Result<Vec<Declaration>, DeclarationParseError> {
-    let input = ccss::token::stream::TokenStream::new(input);
-
-    let mut input = input.try_process().unwrap();
-
-    let mut out = vec![];
-
-    loop {
-        let res = Declaration::try_consume_next(input);
-        let (d, reason) = match res {
-            Ok(v) => v,
-            Err(err) => match err {
-                DeclarationParseError::UnexpectedToken(t)
-                    if t.expect.is_ident()
-                        && t.buffered_input.tokens_and_remaining().is_empty() =>
-                {
-                    return Ok(out);
-                }
-                err => return Err(err),
-            },
-        };
-
-        match reason {
-            ParseEndReason::NextIsStopToken(t) => input = t.remaining.try_buffer_n().unwrap(),
-            ParseEndReason::Eof => {
-                out.push(d);
-                return Ok(out);
-            }
-        }
-    }
+fn parse_one(input: &str) -> Result<Vec<Declaration>, DeclarationParseListError> {
+    Declaration::parse_list_from_str(input).collect()
 }

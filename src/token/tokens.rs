@@ -279,6 +279,10 @@ pub mod token {
         Url(UrlParseError<'a>),
     }
 
+    impl<'a> TokenParseError<'a> {
+        pub(crate) const DUMMY: Self = Self::Url(UrlParseError::Eof);
+    }
+
     pub enum TokenParseOutput<'a> {
         TokenAndRemaining(Token<'a>, Filtered<'a>),
         // An valid EOF. Not an unexpected EOF.
