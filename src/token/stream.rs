@@ -33,6 +33,10 @@ impl<'a> CopyableTokenStream<'a> {
             .before(&other.to_token_stream())
             .to_copyable()
     }
+
+    pub(crate) const fn to_str(self) -> &'a str {
+        self.inner
+    }
 }
 
 impl<'a> TokenStream<'a> {

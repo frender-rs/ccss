@@ -734,6 +734,14 @@ pub mod numeric_token {
             this
         }
 
+        pub const fn full_as_str(&self) -> &'a str {
+            self.full
+        }
+
+        pub const fn kind(&self) -> NumberKind {
+            self.kind
+        }
+
         // https://drafts.csswg.org/css-syntax-3/#starts-with-a-number
         // fn would_start(stream: Filtered<'_>) {
         //     1

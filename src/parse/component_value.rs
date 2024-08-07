@@ -26,7 +26,7 @@ pub struct Function<'a> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct List<'a> {
+pub(crate) struct List<'a> {
     pub full: CopyableTokenStream<'a>,
     pub len: usize,
 }

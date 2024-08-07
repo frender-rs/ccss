@@ -534,6 +534,30 @@ impl<'a> Declaration<'a> {
             }
         }
     }
+
+    pub fn full_as_str(&self) -> &'a str {
+        self.full.to_str()
+    }
+
+    pub fn name(&self) -> IdentToken<'a> {
+        self.name
+    }
+
+    pub fn name_as_str(&self) -> &'a str {
+        self.name.to_str()
+    }
+
+    pub fn value_as_str(&self) -> &'a str {
+        self.value.full.to_str()
+    }
+
+    pub fn is_important(&self) -> bool {
+        self.important.is_some()
+    }
+
+    pub fn to_tuple_str(self) -> (&'a str, &'a str, bool) {
+        (self.name_as_str(), self.value_as_str(), self.is_important())
+    }
 }
 
 const fn is_bang_important<'a>(

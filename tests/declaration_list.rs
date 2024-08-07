@@ -1,6 +1,12 @@
 use std::borrow::Cow;
 
-use ccss::parse::declaration::{Declaration, DeclarationParseListError, ParseEndReason};
+use ccss::{
+    parse::{
+        component_value::ComponentValue,
+        declaration::{Declaration, DeclarationParseListError, ParseEndReason},
+    },
+    token::stream::TokenStream,
+};
 use util::{declaration_rule_list::DeclarationRule, error::MaybeError, TestSuite, TestSuites};
 
 mod util;
@@ -35,6 +41,35 @@ fn test_all() {
             // TODO: test errors
         } else {
             let d = res.unwrap();
+            let d = d
+                .into_iter()
+                .map(|d| util::declaration::Declaration {
+                    name: d.name_as_str().into(),
+                    value: {
+                        // TODO: prevent re-parse
+                        let s = d.value_as_str();
+                        let mut list =
+                            ComponentValue::try_consume_list(TokenStream::new(s)).unwrap();
+
+                        let mut res = Vec::new();
+                        while let Some((v, new_list)) = list.try_next().unwrap() {
+                            list = new_list;
+                            res.push(
+                                util::component_value::ComponentValue::from_parsed(v)
+                                    .map_str(Cow::Borrowed),
+                            );
+                        }
+
+                        res
+                    },
+                    important: d.is_important(),
+                })
+                .map(DeclarationRule::Declaration)
+                .map(Ok)
+                .map(|result| MaybeError { result })
+                .collect::<Vec<_>>();
+
+            assert_eq!(d, expected);
         }
     }
 }

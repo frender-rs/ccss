@@ -125,7 +125,7 @@ pub mod error {
         Err(E),
     }
 
-    #[derive(Deserialize)]
+    #[derive(Deserialize, Debug, PartialEq)]
     #[serde(from = "UntaggedResult<T, Error<S>>")]
     pub struct MaybeError<T, S> {
         pub result: Result<T, Error<S>>,
@@ -221,6 +221,8 @@ pub mod component_value {
         Deserialize,
     };
 
+    use ccss::parse::component_value::ComponentValue as Parsed;
+
     use crate::util::serde_seq_flatten::SeqFlatten;
 
     define_literals!(
@@ -296,6 +298,37 @@ pub mod component_value {
         value: NumberValue,
     }
 
+    impl<S> Number<S> {
+        fn map_str<SS>(self, mut f: impl FnMut(S) -> SS) -> Number<SS> {
+            let Self {
+                representation,
+                value,
+            } = self;
+            Number {
+                representation: f(representation),
+                value,
+            }
+        }
+    }
+
+    impl<'a> Number<&'a str> {
+        fn from_parsed(t: ccss::token::tokens::numeric_token::Number<'a>) -> Number<&'a str> {
+            use ccss::token::tokens::numeric_token::NumberKind;
+
+            let representation = t.full_as_str();
+
+            let value = match t.kind() {
+                NumberKind::Integer => NumberValue::Integer(representation.parse().unwrap()),
+                NumberKind::Number => NumberValue::Number(representation.parse().unwrap()),
+            };
+
+            Self {
+                representation,
+                value,
+            }
+        }
+    }
+
     impl<S> From<NumericRaw<NumberLiteral, S, NumberValue>> for Number<S> {
         fn from(
             NumericRaw {
@@ -329,13 +362,77 @@ pub mod component_value {
         );
     }
 
+    define_literals!(
+        type WhitespaceLiteral = HasWhitespaceLiteral<" ">;
+    );
+
+    #[derive(Deserialize, Debug, PartialEq)]
+    #[serde(from = "WhitespaceLiteral")]
+    pub struct Whitespace;
+
+    impl From<WhitespaceLiteral> for Whitespace {
+        fn from(_: WhitespaceLiteral) -> Self {
+            Self
+        }
+    }
+
     #[derive(Deserialize, Debug, PartialEq)]
     #[serde(untagged)]
     pub enum ComponentValue<S> {
+        Whitespace(Whitespace),
         Delim(char),
         Number(Number<S>),
         Block(Block<S>),
         Typed(S, S),
+    }
+
+    impl<S> ComponentValue<S> {
+        pub(crate) fn map_str<SS>(self, mut f: impl FnMut(S) -> SS) -> ComponentValue<SS> {
+            self.map_str_by_mut(&mut f)
+        }
+
+        pub(crate) fn map_str_by_mut<SS>(self, f: &mut impl FnMut(S) -> SS) -> ComponentValue<SS> {
+            match self {
+                ComponentValue::Whitespace(v) => ComponentValue::Whitespace(v),
+                ComponentValue::Delim(v) => ComponentValue::Delim(v),
+                ComponentValue::Number(v) => ComponentValue::Number(v.map_str(f)),
+                ComponentValue::Block(v) => ComponentValue::Block(v.map_str_by_mut(f)),
+                ComponentValue::Typed(a, b) => ComponentValue::Typed(f(a), f(b)),
+            }
+        }
+    }
+
+    impl<'a> ComponentValue<&'a str> {
+        pub(crate) fn from_parsed(v: Parsed<'a>) -> Self {
+            use ccss::token::tokens::{
+                ident_like_token::IdentLikeToken, ident_token::IdentToken,
+                numeric_token::NumericToken, token::Token,
+            };
+            match v {
+                Parsed::PreservedTokens(t) => match t {
+                    Token::Whitespace(_) => Self::Whitespace(Whitespace),
+                    Token::StringToken(_) => todo!(),
+                    Token::Simple(_) => todo!(),
+                    Token::Numeric(t) => match t {
+                        NumericToken::Number(t) => Self::Number(Number::from_parsed(t)),
+                        NumericToken::Percentage(_) => todo!(),
+                        NumericToken::Dimension(_) => todo!(),
+                    },
+                    Token::IdentLike(t) => match t {
+                        IdentLikeToken::Ident(t) => Self::Typed("ident", t.to_str()),
+                        IdentLikeToken::Function(_) => todo!(),
+                        IdentLikeToken::Url(_) => todo!(),
+                    },
+                    Token::Cdc(_) => todo!(),
+                    Token::Cdo(_) => todo!(),
+                    Token::AtKeyword(_) => todo!(),
+                    Token::Delim(t) => Self::Delim(t.value().to_char()),
+                    Token::Hash(_) => todo!(),
+                },
+                Parsed::Function(_) => todo!(),
+                Parsed::SimpleBlock(_) => todo!(),
+            }
+        }
     }
 
     #[derive(Deserialize, Debug, PartialEq)]
@@ -343,6 +440,16 @@ pub mod component_value {
     pub struct Block<S> {
         kind: BlockKind,
         content: Vec<ComponentValue<S>>,
+    }
+
+    impl<S> Block<S> {
+        fn map_str_by_mut<SS>(self, f: &mut impl FnMut(S) -> SS) -> Block<SS> {
+            let Self { kind, content } = self;
+            Block {
+                kind,
+                content: content.into_iter().map(|v| v.map_str_by_mut(f)).collect(),
+            }
+        }
     }
 
     impl<S> From<SeqFlatten<(BlockKind,), Vec<ComponentValue<S>>>> for Block<S> {
