@@ -1,4 +1,5 @@
 use crate::input::{code_points::is_ident_code_point, Filtered, FilteredChar, FilteredCharVec};
+use crate::util::array_vec::HasConstDummyValue;
 
 use super::escaped_code_point::EscapedCodePoint;
 use super::ident_like::{FunctionToken, IdentLikeToken, UrlParseError};
@@ -74,6 +75,10 @@ pub enum Token<'a> {
     AtKeyword(AtKeywordToken<'a>),
     Delim(DelimToken<'a>),
     Hash(HashToken<'a>),
+}
+
+impl<'a> HasConstDummyValue for Token<'a> {
+    const DUMMY_VALUE: Self = Token::Whitespace(WhitespaceToken::ONE_SPACE);
 }
 
 #[derive(Debug)]

@@ -12,7 +12,7 @@ use crate::{
             TokenParseError, TokenParseResult, WhitespaceToken,
         },
     },
-    util::array_vec::{ArrayVec, ConstDummyValueFor},
+    util::array_vec::{ArrayVec, HasConstDummyValue},
 };
 
 use super::component_value::{
@@ -280,16 +280,6 @@ impl<'a> Declaration<'a> {
             Err(err) => return Err(ConsumeAfterNameErrorFull::Token(err)),
         };
 
-        enum Dummy {}
-
-        impl<'a> ConstDummyValueFor<ValueAndRemaining<'a>> for Dummy {
-            const DUMMY_VALUE: ValueAndRemaining<'a> = ValueAndRemaining {
-                cv: ComponentValue::PreservedTokens(Token::Whitespace(WhitespaceToken::ONE_SPACE)),
-                remaining: TokenStream::EMPTY.to_copyable(),
-                full: TokenStream::EMPTY.to_copyable(),
-            };
-        }
-
         #[derive(Clone, Copy)]
         struct ValueAndRemaining<'a> {
             cv: ComponentValue<'a>,
@@ -298,13 +288,21 @@ impl<'a> Declaration<'a> {
             full: CopyableTokenStream<'a>,
         }
 
+        impl<'a> HasConstDummyValue for ValueAndRemaining<'a> {
+            const DUMMY_VALUE: Self = ValueAndRemaining {
+                cv: ComponentValue::PreservedTokens(Token::Whitespace(WhitespaceToken::ONE_SPACE)),
+                remaining: TokenStream::EMPTY.to_copyable(),
+                full: TokenStream::new(" ").to_copyable(),
+            };
+        }
+
         let mut input = ComponentValueConsumeList::new_with_process(input);
 
         enum ValueList<'a> {
             Empty,
             NotEmpty {
                 first: ValueAndRemaining<'a>,
-                last_3: ArrayVec<ValueAndRemaining<'a>, Dummy, 3>,
+                last_3: ArrayVec<ValueAndRemaining<'a>, 3>,
                 real_len: usize,
             },
         }

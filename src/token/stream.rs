@@ -99,30 +99,13 @@ impl<'a> TokenStream<'a> {
 
 mod buffered_token_stream {
 
-    use crate::util::array_vec::{ArrayVec, ConstDummyValueFor};
+    use crate::util::array_vec::{ArrayVec, HasConstDummyValue};
     use crate::{
         parse::component_value::TokenAndRemaining,
         token::tokens::{Token, TokenParseResult, WhitespaceToken},
     };
 
     use super::{CopyableTokenStream, TokenStream};
-
-    enum DummyForToken {}
-
-    const DUMMY_TOKEN: Token = Token::Whitespace(WhitespaceToken::ONE_SPACE);
-
-    const DUMMY_BUF_TOKEN: BufferedToken = BufferedToken {
-        token: DUMMY_TOKEN,
-        token_and_remaining: TokenStream::EMPTY.to_copyable(),
-    };
-
-    impl<'a> ConstDummyValueFor<Token<'a>> for DummyForToken {
-        const DUMMY_VALUE: Token<'a> = DUMMY_TOKEN;
-    }
-
-    impl<'a> ConstDummyValueFor<BufferedToken<'a>> for DummyForToken {
-        const DUMMY_VALUE: BufferedToken<'a> = DUMMY_BUF_TOKEN;
-    }
 
     #[derive(Debug, Clone, Copy)]
     pub struct BufferedToken<'a> {
@@ -131,10 +114,17 @@ mod buffered_token_stream {
         pub token_and_remaining: CopyableTokenStream<'a>,
     }
 
+    impl<'a> HasConstDummyValue for BufferedToken<'a> {
+        const DUMMY_VALUE: Self = BufferedToken {
+            token: Token::Whitespace(WhitespaceToken::ONE_SPACE),
+            token_and_remaining: TokenStream::new(" ").to_copyable(),
+        };
+    }
+
     pub struct BufferedTokenStream<'a, const N: usize> {
         // first in first out
         // TODO: optimize with a ring buffer
-        buf: ArrayVec<BufferedToken<'a>, DummyForToken, N>,
+        buf: ArrayVec<BufferedToken<'a>, N>,
         // len of buf
         // If remaining is not empty, then buf.len() == N, which means buf is filled
         // If buf.len() < N, then remaining is empty
@@ -182,7 +172,7 @@ mod buffered_token_stream {
             remaining: TokenStream::EMPTY,
         };
 
-        const fn buffered_tokens(&self) -> ArrayVec<Token<'a>, DummyForToken, N> {
+        const fn buffered_tokens(&self) -> ArrayVec<Token<'a>, N> {
             let mut res = ArrayVec::EMPTY;
 
             let mut i = 0;
@@ -230,7 +220,7 @@ mod buffered_token_stream {
 
         pub const fn try_new_fill(mut stream: TokenStream<'a>) -> TokenParseResult<'a, Self> {
             let mut len = 0;
-            let mut buf = [DUMMY_BUF_TOKEN; N];
+            let mut buf = [BufferedToken::DUMMY_VALUE; N];
 
             while len < N {
                 let token_and_remaining = stream.to_copyable();
