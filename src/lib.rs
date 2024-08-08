@@ -8,4 +8,6 @@ pub mod token;
 
 pub mod parse;
 
+pub mod const_known;
+
 pub mod collections;
