@@ -24,6 +24,8 @@ pub struct CopyableTokenStream<'a> {
 }
 
 impl<'a> CopyableTokenStream<'a> {
+    pub(crate) const EMPTY: Self = TokenStream::EMPTY.to_copyable();
+
     pub const fn to_token_stream(self) -> TokenStream<'a> {
         TokenStream(Filtered::new(self.inner))
     }

@@ -27,7 +27,7 @@ define_known_variants!(
 );
 
 impl<V: IsKnownCollection<T, CAP>, T, const CAP: usize> KnownCollection<V, T, CAP> {
-    pub fn with_push(self, value: T) -> Self
+    pub const fn with_push(self, value: T) -> Self
     where
         T: Copy,
     {
@@ -40,6 +40,28 @@ impl<V: IsKnownCollection<T, CAP>, T, const CAP: usize> KnownCollection<V, T, CA
                 this.len += 1;
                 this
             }),
+        }
+    }
+
+    pub const fn with_push_maybe_fake(self, value: T) -> (Self, Option<T>)
+    where
+        T: Copy,
+    {
+        match self {
+            KnownCollection::ArrayVec(y, this) => {
+                (KnownCollection::ArrayVec(y, this.with_push(value)), None)
+            }
+            KnownCollection::LeadVec(y, this) => {
+                let (this, value) = this.with_push_maybe_fake(value);
+                (KnownCollection::LeadVec(y, this), value)
+            }
+            KnownCollection::Count(y, mut this) => (
+                KnownCollection::Count(y, {
+                    this.len += 1;
+                    this
+                }),
+                Some(value),
+            ),
         }
     }
 }

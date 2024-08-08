@@ -30,24 +30,34 @@ impl<T, const CAP: usize> LeadVec<T, CAP> {
         self.lead.len() + self.tail_len
     }
 
-    pub(crate) const fn with_push(mut self, value: T) -> Self
+    pub(crate) const fn with_push(self, value: T) -> Self
+    where
+        T: Copy,
+    {
+        self.with_push_maybe_fake(value).0
+    }
+
+    /// `(_, Some(value))` indicates this is a fake push, and the input value is returned as is.
+    pub(crate) const fn with_push_maybe_fake(mut self, value: T) -> (Self, Option<T>)
     where
         T: Copy,
     {
         if self.tail_len > 0 {
             self.tail_len += 1;
-            return self;
+            return (self, Some(value));
         }
 
-        self.lead = match self.lead.with_try_push(value) {
-            Ok(lead) => lead,
-            Err((lead, _)) => {
-                self.tail_len += 1;
-                lead
+        match self.lead.with_try_push(value) {
+            Ok(lead) => {
+                self.lead = lead;
+                (self, None)
             }
-        };
-
-        self
+            Err((lead, value)) => {
+                self.lead = lead;
+                self.tail_len += 1;
+                (self, Some(value))
+            }
+        }
     }
 }
 
