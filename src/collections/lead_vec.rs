@@ -1,6 +1,6 @@
 use super::{array_vec::ArrayVec, HasConstDummyValue};
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct LeadVec<T, const CAP: usize> {
     lead: ArrayVec<T, CAP>,
     tail_len: usize,

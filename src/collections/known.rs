@@ -4,6 +4,7 @@ use super::{array_vec::ArrayVec, count::Count, lead_vec::LeadVec};
 
 define_known_variants!(
     #[non_exhaustive]
+    #[derive(Clone, Copy)]
     pub enum KnownCollection<T, const CAP: usize> {
         /// Panics if pushing values when filled.
         ArrayVec(ArrayVec<T, CAP>),
@@ -25,6 +26,18 @@ define_known_variants!(
     #[as_variant]
     pub fn as_collection();
 );
+
+impl<V: IsKnownCollection<T, CAP>, T: std::fmt::Debug, const CAP: usize> std::fmt::Debug
+    for KnownCollection<V, T, CAP>
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ArrayVec(_, this) => this.fmt(f),
+            Self::LeadVec(_, this) => this.fmt(f),
+            Self::Count(_, this) => this.fmt(f),
+        }
+    }
+}
 
 impl<V: IsKnownCollection<T, CAP>, T, const CAP: usize> KnownCollection<V, T, CAP> {
     pub const fn with_push(self, value: T) -> Self

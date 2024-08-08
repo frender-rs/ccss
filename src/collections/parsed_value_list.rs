@@ -33,6 +33,7 @@ impl<T, const CAP: usize> IsKnownParsedValueList<T, CAP> for Count {
         KnownCollection::<Self, T, CAP>::from_collection(Self::EMPTY);
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct KnownParsedValueList<'a, L: IsKnownParsedValueList<T, CAP>, T, const CAP: usize> {
     /// full contains parsed and unparsed
     full: CopyableTokenStream<'a>,
@@ -43,6 +44,12 @@ pub struct KnownParsedValueList<'a, L: IsKnownParsedValueList<T, CAP>, T, const 
 impl<'a, L: IsKnownParsedValueList<T, CAP>, T, const CAP: usize>
     KnownParsedValueList<'a, L, T, CAP>
 {
+    pub(crate) const EMPTY: Self = Self {
+        full: CopyableTokenStream::EMPTY,
+        parsed: L::EMPTY_LIST_AS_KNOWN_COLLECTION,
+        unparsed: CopyableTokenStream::EMPTY,
+    };
+
     pub(crate) const fn start_builder() -> KnownParsedValueListBuilder<'a, L, T, CAP> {
         KnownParsedValueListBuilder::Empty
     }
@@ -53,6 +60,16 @@ impl<'a, L: IsKnownParsedValueList<T, CAP>, T, const CAP: usize>
 
     pub const fn full_as_str(&self) -> &'a str {
         self.full.to_str()
+    }
+}
+
+impl<'a, T, const CAP: usize> KnownParsedValueList<'a, Count, T, CAP> {
+    pub(crate) const fn new_count(full: CopyableTokenStream<'a>, len: usize) -> Self {
+        KnownParsedValueList {
+            full,
+            parsed: KnownCollection::<Count, T, CAP>::from_collection(Count { len }),
+            unparsed: full,
+        }
     }
 }
 

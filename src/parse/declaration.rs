@@ -1,8 +1,16 @@
 use std::iter::FusedIterator;
 
 use crate::{
-    collections::{array_vec::ArrayVec, HasConstDummyValue},
-    parse::component_value::{ListParseFullError, NextFull, TokenAndRemaining},
+    collections::{
+        array_vec::ArrayVec,
+        count::Count,
+        known::IsKnownCollection,
+        parsed_value_list::{IsKnownParsedValueList, KnownParsedValueList},
+        HasConstDummyValue,
+    },
+    parse::component_value::{
+        ComponentValueParseList, ListParseFullError, NextFull, TokenAndRemaining,
+    },
     token::{
         stream::{
             BufferedToken, BufferedTokenStream, CopyableTokenStream, TokenStream,
@@ -16,17 +24,21 @@ use crate::{
 };
 
 use super::component_value::{
-    ComponentValue, ComponentValueConsumeList, ComponentValueParseError,
-    ComponentValueParseOrTokenError, List, ListParseNotNestedError, NestedConfig, NestedFalse,
+    ComponentValue, ComponentValueParseError, ComponentValueParseOrTokenError,
+    KnownComponentValueList, List, ListParseNotNestedError, NestedConfig, NestedFalse,
     RightCurlyBracketAndRemaining, SemicolonAsStopToken,
 };
 
 #[derive(Debug, Clone, Copy)]
-pub struct Declaration<'a> {
+pub struct Declaration<
+    'a,
+    L: IsKnownParsedValueList<ComponentValue<'a>, CAP> = Count,
+    const CAP: usize = 0,
+> {
     full: CopyableTokenStream<'a>,
     name: IdentToken<'a>,
     colon: Colon<'a>,
-    value: List<'a>,
+    value: KnownComponentValueList<'a, L, CAP>,
     important: Option<Important<'a>>,
 }
 
@@ -296,7 +308,7 @@ impl<'a> Declaration<'a> {
             };
         }
 
-        let mut input = ComponentValueConsumeList::new_with_process(input);
+        let mut input = input;
 
         enum ValueList<'a> {
             Empty,
@@ -466,19 +478,25 @@ impl<'a> Declaration<'a> {
         let mut values = ValueList::Empty;
 
         loop {
-            let before_next = input.input.tokens_and_remaining();
-            match input.try_next_full::<SemicolonAsStopToken, Nested>() {
+            let before_next = input.tokens_and_remaining();
+            match ComponentValueParseList::try_consume_next_full::<SemicolonAsStopToken, Nested>(
+                input,
+            ) {
                 Ok(res) => {
                     let reason = match res {
                         NextFull::YieldValue(cv, this) => {
+                            let new_input = match this.inner {
+                                Ok(input) => input,
+                                Err(err) => return Err(ConsumeAfterNameErrorFull::Token(err)),
+                            };
                             if !cv.is_whitespace() {
                                 values = values.with_push(ValueAndRemaining {
                                     cv,
-                                    remaining: this.input.tokens_and_remaining_to_copyable(),
+                                    remaining: new_input.tokens_and_remaining_to_copyable(),
                                     full: before_next.to_copyable(),
                                 });
                             }
-                            input = this;
+                            input = new_input;
                             continue;
                         }
                         NextFull::NextIsRightCurlyBracket(a, b) => {
@@ -496,7 +514,7 @@ impl<'a> Declaration<'a> {
                                 full,
                             })
                         }
-                        NextFull::Eof => ParseEndReasonFull::Eof,
+                        NextFull::Eof(_) => ParseEndReasonFull::Eof,
                     };
 
                     let after_last = match values.last() {
@@ -516,7 +534,7 @@ impl<'a> Declaration<'a> {
                                 .to_copyable(),
                             name,
                             colon,
-                            value,
+                            value: value.into_count(),
                             important,
                         },
                         reason,
@@ -543,7 +561,7 @@ impl<'a> Declaration<'a> {
     }
 
     pub fn value_as_str(&self) -> &'a str {
-        self.value.full.to_str()
+        self.value.full_as_str()
     }
 
     pub fn is_important(&self) -> bool {

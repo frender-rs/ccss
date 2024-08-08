@@ -94,7 +94,7 @@ impl<'a> TokenStream<'a> {
         input.try_discard_whitespace()
     }
 
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.0 .0.as_str().is_empty()
     }
 }

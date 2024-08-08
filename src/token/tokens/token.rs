@@ -323,7 +323,7 @@ pub enum SimpleBlockEndingToken<'a> {
     Parenthesis(RightParenthesis<'a>),
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum SimpleBlockSurroundingTokens<'a> {
     CurlyBracket(LeftCurlyBracket<'a>, RightCurlyBracket<'a>),
     SquareBracket(LeftSquareBracket<'a>, RightSquareBracket<'a>),

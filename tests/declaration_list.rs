@@ -48,19 +48,16 @@ fn test_all() {
                     value: {
                         // TODO: prevent re-parse
                         let s = d.value_as_str();
-                        let mut list =
-                            ComponentValue::try_consume_list(TokenStream::new(s)).unwrap();
 
-                        let mut res = Vec::new();
-                        while let Some((v, new_list)) = list.try_next().unwrap() {
-                            list = new_list;
-                            res.push(
-                                util::component_value::ComponentValue::from_parsed(v)
-                                    .map_str(Cow::Borrowed),
-                            );
-                        }
-
-                        res
+                        ComponentValue::parse_list(TokenStream::new(s))
+                            .map(|res| {
+                                res.map(|v| {
+                                    util::component_value::ComponentValue::from_parsed(v)
+                                        .map_str(Cow::Borrowed)
+                                })
+                            })
+                            .collect::<Result<_, _>>()
+                            .unwrap()
                     },
                     important: d.is_important(),
                 })
