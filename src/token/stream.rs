@@ -98,8 +98,7 @@ impl<'a> TokenStream<'a> {
 }
 
 mod buffered_token_stream {
-
-    use crate::util::array_vec::{ArrayVec, HasConstDummyValue};
+    use crate::collections::{array_vec::ArrayVec, HasConstDummyValue};
     use crate::{
         parse::component_value::TokenAndRemaining,
         token::tokens::{Token, TokenParseResult, WhitespaceToken},

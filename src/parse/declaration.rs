@@ -1,6 +1,7 @@
 use std::iter::FusedIterator;
 
 use crate::{
+    collections::{array_vec::ArrayVec, HasConstDummyValue},
     parse::component_value::{ListParseFullError, NextFull, TokenAndRemaining},
     token::{
         stream::{
@@ -12,7 +13,6 @@ use crate::{
             TokenParseError, TokenParseResult, WhitespaceToken,
         },
     },
-    util::array_vec::{ArrayVec, HasConstDummyValue},
 };
 
 use super::component_value::{

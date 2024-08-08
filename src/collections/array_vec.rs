@@ -1,13 +1,4 @@
-use std::marker::PhantomData;
-
-/// [`HasConstDummyValue::DUMMY_VALUE`] must be valid.
-pub trait HasConstDummyValue {
-    const DUMMY_VALUE: Self;
-}
-
-impl HasConstDummyValue for char {
-    const DUMMY_VALUE: Self = '\0';
-}
+use super::HasConstDummyValue;
 
 /// A safe implementation of ArrayVec where the tail is filled with
 /// [`T::DUMMY_VALUE`](HasConstDummyValue::DUMMY_VALUE).

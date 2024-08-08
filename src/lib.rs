@@ -8,4 +8,4 @@ pub mod token;
 
 pub mod parse;
 
-mod util;
+pub mod collections;

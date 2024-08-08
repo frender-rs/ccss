@@ -1,5 +1,5 @@
+use crate::collections::HasConstDummyValue;
 use crate::input::{code_points::is_ident_code_point, Filtered, FilteredChar, FilteredCharVec};
-use crate::util::array_vec::HasConstDummyValue;
 
 use super::escaped_code_point::EscapedCodePoint;
 use super::ident_like::{FunctionToken, IdentLikeToken, UrlParseError};
