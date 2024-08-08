@@ -45,14 +45,36 @@ impl No {
     }
 }
 
+/// ## `#[non_exhaustive]` and `#[sealed(my_sealed_mod)]`
+///
+/// ```
+/// # use ccss::define_known_variants;
+/// define_known_variants!(
+///     #[non_exhaustive]
+///     pub enum KnownUnsignedInteger {
+///         U8(u8),
+///         U16(u16),
+///         U32(u32),
+///         U64(u64),
+///     }
+///
+///     #[sealed(my_sealed_mod)]
+///     pub trait IsKnownUnsignedInteger {}
+/// );
+/// ```
 #[macro_export]
 macro_rules! define_known_variants {
     (
+        $(#$enum_attr:tt)*
         $enum_vis:vis enum $KnownVariant:ident $($generics_and_rest:tt)*
     ) => {
         $crate::const_known::__private::parse_generics! {
             [
-                enum { $enum_vis $KnownVariant }
+                dollar { $ }
+                enum {
+                    $(#$enum_attr)*
+                    $enum_vis $KnownVariant
+                }
             ]
             {$($generics_and_rest)*}
             => $crate::__define_known_variants_after_parse_generics!
@@ -62,13 +84,48 @@ macro_rules! define_known_variants {
 
 #[doc(hidden)]
 pub mod __private {
-    pub use ::syn_lite::parse_generics;
+    pub use ::syn_lite::{expand_if_else, parse_generics};
     pub use core::stringify;
+
+    #[macro_export]
+    macro_rules! __define_known_variants_trait_IsKnownVariant {
+        (
+            sealed_mod {$sealed_mod:ident}
+            sealed_bound { $sealed_bound:path }
+            trait_vis {$trait_vis:vis}
+            trait_path {$($trait_path:tt)*}
+            trait_bounds {$($trait_bounds:tt)*}
+            $trait_block:tt
+        ) => {
+            $trait_vis trait $($trait_path)*
+            :
+            $sealed_bound +
+            $($trait_bounds)*
+            $trait_block
+        };
+        (
+            sealed_mod {}
+            sealed_bound { $sealed_bound:path }
+            trait_vis {$trait_vis:vis}
+            trait_path {$($trait_path:tt)*}
+            trait_bounds {$($trait_bounds:tt)*}
+            $trait_block:tt
+        ) => {
+            $trait_vis trait $($trait_path)*
+            :
+            $($trait_bounds)*
+            $trait_block
+        };
+    }
 
     #[macro_export]
     macro_rules! __define_known_variants_after_parse_generics {
         (
-            enum { $enum_vis:vis $KnownVariant:ident }
+            dollar { $dollar:tt }
+            enum {
+                $(#$enum_attr:tt)*
+                $enum_vis:vis $KnownVariant:ident
+            }
             generics! {
                 params! { $($params:tt)* }
                 impl_generics! $impl_generics:tt
@@ -78,11 +135,13 @@ pub mod __private {
             rest! {
                 {
                     $(
+                        $(#$var_attr:tt)*
                         $VarName:ident ($VarType:ty)
                     ),*
                     $(,)?
                 }
 
+                $(#[sealed ($sealed_mod:ident)])?
                 $trait_vis:vis trait $IsKnownVariant:ident
                 $(
                     :
@@ -99,22 +158,50 @@ pub mod __private {
                 $($rest:tt)*
             }
         ) => {
+            $(#$enum_attr)*
             $enum_vis enum $KnownVariant<
-                __Variant: $IsKnownVariant<$($params_name)*>,
+                __Variant: $IsKnownVariant<$($type_generics)*>,
                 $($params)*
             > {
                 $(
+                    $(#$var_attr)*
                     $VarName(__Variant::$VarName, $VarType),
                 )*
             }
 
-            $trait_vis trait $IsKnownVariant<$($params)*> {
-                $(
-                    #[doc = " Indicates whether `Self` may be [`"]
-                    #[doc = $crate::const_known::__private::stringify!($VarType)]
-                    #[doc = "`]"]
-                    type $VarName: $crate::const_known::YesOrNo;
-                )*
+            $crate::const_known::__private::expand_if_else! { [$($sealed_mod)?]{
+                mod $($sealed_mod)? {
+                    #[allow(unused_imports)]
+                    use super::*;
+
+                    $trait_vis trait $IsKnownVariant<$($params)*> {}
+                }
+            }{}}
+
+            $crate::__define_known_variants_trait_IsKnownVariant! {
+                sealed_mod {$($sealed_mod)?}
+                sealed_bound { $($sealed_mod)? ::$IsKnownVariant<$($type_generics)*> }
+                trait_vis { $trait_vis }
+                trait_path { $IsKnownVariant<$($params)*> }
+                trait_bounds {
+                    $(
+                        $($trait_bound_lt)?
+                        $(+ $trait_bounds_lt)*
+                        $(
+                            $( + $({$plus_ignore })? )?
+                            $( ? $([$relax_ignore])? )?
+                            $bounds
+                        )*
+                    )?
+                }
+                {
+                    $(
+                        #[doc = " Indicates whether `Self` may be [`"]
+                        #[doc = $crate::const_known::__private::stringify!($VarType)]
+                        #[doc = "`]"]
+                        type $VarName: $crate::const_known::YesOrNo;
+                    )*
+                }
             }
 
             const _: () = {
@@ -123,15 +210,27 @@ pub mod __private {
                         ($VarName $VarName) => {
                             $crate::const_known::Yes
                         };
+                        ($VarName $VarName { $dollar($yes:tt)* } $no:tt) => {
+                            $dollar($yes)*
+                        };
                     )*
                     ($_0:ident $_1:ident ) => {
                         $crate::const_known::No
+                    };
+                    ($_0:ident $_1:ident $yes:tt { $dollar($no:tt)* } ) => {
+                        $dollar($no)*
                     };
                 }
 
                 $crate::__define_known_variants_impl_for_known_variants! {
                     impl_generics $impl_generics
-                    trait { $IsKnownVariant<$($params_name)*> }
+                    trait { $IsKnownVariant<$($type_generics)*> }
+                    sealed_trait {
+                        sealed_mod { $($sealed_mod)? }
+                        sealed_trait_path {
+                            $($sealed_mod)? ::$IsKnownVariant< $($type_generics)* >
+                        }
+                    }
                     [$(
                         { $VarName($VarType) }
                     )*]
@@ -139,24 +238,24 @@ pub mod __private {
                         $VarName
                     )*]
                 }
-            };
 
-            $crate::__define_known_variants_impl_auto_fns! {
-                {$($rest)*}
-                {
-                    variants {$(
-                        { $VarName($VarType) }
-                    )*}
+                $crate::__define_known_variants_impl_auto_fns! {
+                    {$($rest)*}
                     {
-                        impl_generics $impl_generics
-                        Self { $KnownVariant }
-                        params_name { $($params_name)* }
-                        variant_names {$(
-                            $VarName
+                        variants {$(
+                            { $VarName($VarType) }
                         )*}
+                        {
+                            impl_generics $impl_generics
+                            Self { $KnownVariant }
+                            type_generics { $($type_generics)* }
+                            variant_names {$(
+                                $VarName
+                            )*}
+                        }
                     }
                 }
-            }
+            };
         };
     }
 
@@ -165,9 +264,19 @@ pub mod __private {
         (
             impl_generics { $($impl_generics:tt)* }
             trait { $trait_path:path }
+            sealed_trait {
+                sealed_mod {$($sealed_mod:ident)?}
+                sealed_trait_path {
+                    $($sealed_trait_path:path)?
+                }
+            }
             { $VarName:ident ($VarType:ty) }
             [$($variant_name:ident)*]
         ) => {
+            $crate::const_known::__private::expand_if_else! { [$($sealed_mod)?]{
+                impl<$($impl_generics)*> $($sealed_trait_path)? for $VarType {}
+            }{}}
+
             impl<$($impl_generics)*> $trait_path for $VarType {
                 $(
                     type $variant_name = __ident_match![$VarName $variant_name];
@@ -181,6 +290,7 @@ pub mod __private {
         (
             impl_generics $impl_generics:tt
             trait $trait_path:tt
+            sealed_trait $sealed_trait:tt
             [$($var_name_and_type:tt)*]
             $variant_names:tt
         ) => {
@@ -188,6 +298,7 @@ pub mod __private {
                 $crate::__define_known_variants_impl_for_known_variant! {
                     impl_generics $impl_generics
                     trait $trait_path
+                    sealed_trait $sealed_trait
                     $var_name_and_type
                     $variant_names
                 }
@@ -255,13 +366,13 @@ pub mod auto_fns {
             {
                 impl_generics {$($impl_generics:tt)*}
                 Self { $SelfName:ident }
-                params_name { $($params_name:tt)* }
+                type_generics { $($type_generics:tt)* }
                 variant_names {$(
                     $AllVarName:ident
                 )*}
             }
         ) => {
-            impl<$($impl_generics)*> $SelfName<$VarType, $($params_name)*> {
+            impl<$($impl_generics)*> $SelfName<$VarType, $($type_generics)*> {
                 $fn_vis const fn $fn_name(v: $VarType) -> Self {
                     Self::$VarName($crate::const_known::Yes, v)
                 }
@@ -301,17 +412,20 @@ pub mod auto_fns {
             {
                 impl_generics {$($impl_generics:tt)*}
                 Self { $SelfName:ident }
-                params_name { $($params_name:tt)* }
+                type_generics { $($type_generics:tt)* }
                 variant_names {$(
                     $AllVarName:ident
                 )*}
             }
         ) => {
-            impl<$($impl_generics)*> $SelfName<$VarType, $($params_name)*> {
+            impl<$($impl_generics)*> $SelfName<$VarType, $($type_generics)*> {
                 $fn_vis const fn $fn_name(self) -> $VarType {
                     match self {
                         $(
-                            Self::$AllVarName(yes_or_no, this) => yes_or_no.unwrap_value(this),
+                            Self::$AllVarName(
+                                __ident_match![$AllVarName $VarName {$crate::const_known::Yes} {no}],
+                                __ident_match![$AllVarName $VarName {this} {_}],
+                            ) => __ident_match![$AllVarName $VarName {this} { match no {} }],
                         )*
                     }
                 }
@@ -351,13 +465,13 @@ pub mod auto_fns {
             {
                 impl_generics {$($impl_generics:tt)*}
                 Self { $SelfName:ident }
-                params_name { $($params_name:tt)* }
+                type_generics { $($type_generics:tt)* }
                 variant_names {$(
                     $AllVarName:ident
                 )*}
             }
         ) => {
-            impl<$($impl_generics)*> $SelfName<$VarType, $($params_name)*> {
+            impl<$($impl_generics)*> $SelfName<$VarType, $($type_generics)*> {
                 $fn_vis const fn $fn_name(&self) -> &$VarType {
                     match self {
                         $(
@@ -401,6 +515,8 @@ pub mod auto_fns {
 
 #[cfg(test)]
 mod tests {
+    use std::mem::size_of;
+
     define_known_variants!(
         enum KnownAddU8 {
             U8(u8),
@@ -429,9 +545,25 @@ mod tests {
         assert!(res.into_variant() == 2);
     };
 
+    const TEST_SIZE: () = {
+        enum NeverVariants {
+            _Never(std::convert::Infallible, u8),
+        }
+
+        // TODO: this should be 0
+        assert!(size_of::<NeverVariants>() > 0);
+
+        // TODO: this should eq
+        assert!(size_of::<KnownAddU8<u8>>() > size_of::<u8>());
+    };
+
     #[test]
     const fn test() {
         () = TEST_U8;
+        () = TEST_SIZE;
+
+        assert!(size_of::<KnownAddU8<u16>>() > size_of::<u16>());
+
         let res = KnownAddU8::<u16>::from_variant(2).add_u8(1);
         assert!(*res.as_variant() == 3);
         assert!(res.into_variant() == 3);

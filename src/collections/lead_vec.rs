@@ -1,5 +1,6 @@
 use super::{array_vec::ArrayVec, HasConstDummyValue};
 
+#[derive(Clone, Copy)]
 pub struct LeadVec<T, const CAP: usize> {
     lead: ArrayVec<T, CAP>,
     tail_len: usize,
@@ -27,6 +28,26 @@ impl<T, const CAP: usize> LeadVec<T, CAP> {
 
     pub const fn len(&self) -> usize {
         self.lead.len() + self.tail_len
+    }
+
+    pub(crate) const fn with_push(mut self, value: T) -> Self
+    where
+        T: Copy,
+    {
+        if self.tail_len > 0 {
+            self.tail_len += 1;
+            return self;
+        }
+
+        self.lead = match self.lead.with_try_push(value) {
+            Ok(lead) => lead,
+            Err((lead, _)) => {
+                self.tail_len += 1;
+                lead
+            }
+        };
+
+        self
     }
 }
 
