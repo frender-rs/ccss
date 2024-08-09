@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 
 use ccss::{
+    collections::array_vec::ArrayVec,
     parse::{
         component_value::ComponentValue,
         declaration::{Declaration, DeclarationParseListError},
@@ -71,6 +72,11 @@ fn test_all() {
     }
 }
 
-fn parse_one(input: &str) -> Result<Vec<Declaration>, DeclarationParseListError> {
-    Declaration::parse_list_from_str(input).collect()
+const CAP: usize = 10;
+type List<'a> = ArrayVec<ComponentValue<'a>, CAP>;
+
+fn parse_one(input: &str) -> Result<Vec<Declaration<List, CAP>>, DeclarationParseListError> {
+    Declaration::parse_list_from_str(input)
+        .into_iter()
+        .collect()
 }

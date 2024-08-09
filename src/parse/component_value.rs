@@ -2,6 +2,7 @@ use crate::{
     collections::{
         count::Count,
         parsed_value_list::{IsKnownParsedValueList, KnownParsedValueList},
+        HasConstDummyValue,
     },
     token::{
         stream::{
@@ -21,6 +22,10 @@ pub enum ComponentValue<'a> {
     PreservedTokens(Token<'a>),
     Function(Function<'a>),
     SimpleBlock(SimpleBlock<'a>),
+}
+
+impl<'a> HasConstDummyValue for ComponentValue<'a> {
+    const DUMMY_VALUE: Self = Self::PreservedTokens(Token::DUMMY_VALUE);
 }
 
 #[derive(Debug, Clone, Copy)]

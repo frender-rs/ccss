@@ -2,6 +2,7 @@ use std::iter::FusedIterator;
 
 use crate::{
     collections::{
+        array_vec::ArrayVec,
         count::Count,
         declaration_value_list::{builder::BuildOutput, KnownDeclarationValueList},
         parsed_value_list::IsKnownParsedValueList,
@@ -209,9 +210,7 @@ impl<'a> DeclarationParseErrorFull<'a, NestedFalse> {
     }
 }
 
-impl<'a, L: IsKnownParsedValueList<ComponentValue<'a>, CAP>, const CAP: usize>
-    Declaration<'a, L, CAP>
-{
+impl<'a> Declaration<'a> {
     pub const fn parse_list(input: TokenStream<'a>) -> DeclarationParseList<'a> {
         DeclarationParseList {
             inner: input.try_process(),
@@ -221,7 +220,11 @@ impl<'a, L: IsKnownParsedValueList<ComponentValue<'a>, CAP>, const CAP: usize>
     pub const fn parse_list_from_str(input: &'a str) -> DeclarationParseList<'a> {
         Self::parse_list(TokenStream::new(input))
     }
+}
 
+impl<'a, L: IsKnownParsedValueList<ComponentValue<'a>, CAP>, const CAP: usize>
+    Declaration<'a, L, CAP>
+{
     /// nested is false
     pub(crate) const fn try_consume_next(
         input: TokenStreamProcess<'a>,
@@ -412,6 +415,16 @@ impl<'a, L: IsKnownParsedValueList<ComponentValue<'a>, CAP>, const CAP: usize>
     }
 }
 
+impl<'a, const CAP: usize> Declaration<'a, ArrayVec<ComponentValue<'a>, CAP>, CAP> {
+    pub const fn value_as_slice(&self) -> &[ComponentValue<'a>] {
+        self.value
+            .as_known_parsed_value_list()
+            .parsed()
+            .as_collection()
+            .as_slice()
+    }
+}
+
 const fn str_matches_important_ascii_case_insensitive(s: &str) -> bool {
     matches!(
         s.as_bytes(),
@@ -438,9 +451,12 @@ pub struct DeclarationParseList<'a> {
 }
 
 impl<'a> DeclarationParseList<'a> {
-    pub const fn try_into_next(
+    pub const fn try_into_next<
+        L: IsKnownParsedValueList<ComponentValue<'a>, CAP>,
+        const CAP: usize,
+    >(
         self,
-    ) -> Result<(Option<Declaration<'a>>, Self), DeclarationParseListError<'a>> {
+    ) -> Result<(Option<Declaration<'a, L, CAP>>, Self), DeclarationParseListError<'a>> {
         match self.inner {
             Ok(mut input) => {
                 loop {
@@ -507,7 +523,9 @@ impl<'a> DeclarationParseList<'a> {
     /// - further calling [`DeclarationParseList::try_next`] would emit `Ok((None, EMPTY))`.
     ///
     /// A const version of this method is [`Self::try_into_next`].
-    pub fn try_next(&mut self) -> Result<Option<Declaration<'a>>, DeclarationParseListError<'a>> {
+    pub fn try_next<L: IsKnownParsedValueList<ComponentValue<'a>, CAP>, const CAP: usize>(
+        &mut self,
+    ) -> Result<Option<Declaration<'a, L, CAP>>, DeclarationParseListError<'a>> {
         const DUMMY: DeclarationParseList = DeclarationParseList {
             inner: Err(TokenParseError::DUMMY),
         };
@@ -527,6 +545,15 @@ impl<'a> DeclarationParseList<'a> {
             }
         }
     }
+
+    pub const fn into_iter<L: IsKnownParsedValueList<ComponentValue<'a>, CAP>, const CAP: usize>(
+        self,
+    ) -> DeclarationParseListIntoIter<'a, L, CAP> {
+        DeclarationParseListIntoIter {
+            inner: self,
+            _phantom: std::marker::PhantomData,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -543,15 +570,47 @@ pub enum DeclarationParseError<'a> {
     UnexpectedToken(UnexpectedTokenError<'a>),
 }
 
+pub struct DeclarationParseListIntoIter<
+    'a,
+    L: IsKnownParsedValueList<ComponentValue<'a>, CAP>,
+    const CAP: usize,
+> {
+    inner: DeclarationParseList<'a>,
+    _phantom: std::marker::PhantomData<L>,
+}
+
+impl<'a, L: IsKnownParsedValueList<ComponentValue<'a>, CAP>, const CAP: usize>
+    DeclarationParseListIntoIter<'a, L, CAP>
+{
+    pub const fn try_into_next(
+        self,
+    ) -> Result<(Option<Declaration<'a, L, CAP>>, Self), DeclarationParseListError<'a>> {
+        match self.inner.try_into_next() {
+            Ok((v, this)) => Ok((v, this.into_iter())),
+            Err(err) => Err(err),
+        }
+    }
+    pub fn try_next(
+        &mut self,
+    ) -> Result<Option<Declaration<'a, L, CAP>>, DeclarationParseListError<'a>> {
+        self.inner.try_next()
+    }
+}
+
 /// After the first `Some(Err)`:
 /// - further calling [`Iterator::next`] would emit `None`.
 /// - further calling [`DeclarationParseList::try_next`] would emit `Ok((None, EMPTY))`.
-impl<'a> Iterator for DeclarationParseList<'a> {
-    type Item = Result<Declaration<'a>, DeclarationParseListError<'a>>;
+impl<'a, L: IsKnownParsedValueList<ComponentValue<'a>, CAP>, const CAP: usize> Iterator
+    for DeclarationParseListIntoIter<'a, L, CAP>
+{
+    type Item = Result<Declaration<'a, L, CAP>, DeclarationParseListError<'a>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.try_next().transpose()
     }
 }
 
-impl<'a> FusedIterator for DeclarationParseList<'a> {}
+impl<'a, L: IsKnownParsedValueList<ComponentValue<'a>, CAP>, const CAP: usize> FusedIterator
+    for DeclarationParseListIntoIter<'a, L, CAP>
+{
+}

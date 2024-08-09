@@ -61,6 +61,10 @@ impl<'a, L: IsKnownParsedValueList<T, CAP>, T, const CAP: usize>
     pub const fn full_as_str(&self) -> &'a str {
         self.full.to_str()
     }
+
+    pub(crate) const fn parsed(&self) -> &KnownCollection<L, T, CAP> {
+        &self.parsed
+    }
 }
 
 impl<'a, T, const CAP: usize> KnownParsedValueList<'a, Count, T, CAP> {

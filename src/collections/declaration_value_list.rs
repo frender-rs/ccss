@@ -28,6 +28,12 @@ impl<'a, L: IsKnownParsedValueList<ComponentValue<'a>, CAP>, const CAP: usize>
     pub const fn full_as_str(&self) -> &'a str {
         self.inner.full_as_str()
     }
+
+    pub(crate) const fn as_known_parsed_value_list(
+        &self,
+    ) -> &KnownParsedValueList<'a, L, ComponentValue<'a>, CAP> {
+        &self.inner
+    }
 }
 
 pub(crate) mod builder {
