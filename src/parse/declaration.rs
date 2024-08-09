@@ -2,11 +2,9 @@ use std::iter::FusedIterator;
 
 use crate::{
     collections::{
-        array_vec::ArrayVec,
         count::Count,
-        known::IsKnownCollection,
-        parsed_value_list::{IsKnownParsedValueList, KnownParsedValueList},
-        HasConstDummyValue,
+        declaration_value_list::{builder::BuildOutput, KnownDeclarationValueList},
+        parsed_value_list::IsKnownParsedValueList,
     },
     parse::component_value::{
         ComponentValueParseList, ListParseFullError, NextFull, TokenAndRemaining,
@@ -18,15 +16,15 @@ use crate::{
         },
         tokens::{
             Colon, DelimToken, IdentLikeToken, IdentToken, Semicolon, SimpleToken, Token,
-            TokenParseError, TokenParseResult, WhitespaceToken,
+            TokenParseError, TokenParseResult,
         },
     },
 };
 
 use super::component_value::{
     ComponentValue, ComponentValueParseError, ComponentValueParseOrTokenError,
-    KnownComponentValueList, List, ListParseNotNestedError, NestedConfig, NestedFalse,
-    RightCurlyBracketAndRemaining, SemicolonAsStopToken,
+    ListParseNotNestedError, NestedConfig, NestedFalse, RightCurlyBracketAndRemaining,
+    SemicolonAsStopToken,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -38,15 +36,35 @@ pub struct Declaration<
     full: CopyableTokenStream<'a>,
     name: IdentToken<'a>,
     colon: Colon<'a>,
-    value: KnownComponentValueList<'a, L, CAP>,
+    value_and_important: CopyableTokenStream<'a>,
+    value: KnownDeclarationValueList<'a, L, CAP>,
     important: Option<Important<'a>>,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct Important<'a> {
-    full: CopyableTokenStream<'a>,
-    bang: DelimToken<'a>,
-    important: IdentToken<'a>,
+    pub(crate) full: CopyableTokenStream<'a>,
+    pub(crate) bang: DelimToken<'a>,
+    pub(crate) important: IdentToken<'a>,
+}
+
+impl<'a> Important<'a> {
+    pub(crate) const fn is_bang_important(
+        a: ComponentValue<'a>,
+        b: ComponentValue<'a>,
+    ) -> Option<(DelimToken<'a>, IdentToken<'a>)> {
+        match (a, b) {
+            (
+                ComponentValue::PreservedTokens(Token::Delim(t)),
+                ComponentValue::PreservedTokens(Token::IdentLike(IdentLikeToken::Ident(ident))),
+            ) if t.value().to_char() == '!'
+                && str_matches_important_ascii_case_insensitive(ident.to_str()) =>
+            {
+                Some((t, ident))
+            }
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -191,7 +209,9 @@ impl<'a> DeclarationParseErrorFull<'a, NestedFalse> {
     }
 }
 
-impl<'a> Declaration<'a> {
+impl<'a, L: IsKnownParsedValueList<ComponentValue<'a>, CAP>, const CAP: usize>
+    Declaration<'a, L, CAP>
+{
     pub const fn parse_list(input: TokenStream<'a>) -> DeclarationParseList<'a> {
         DeclarationParseList {
             inner: input.try_process(),
@@ -292,190 +312,9 @@ impl<'a> Declaration<'a> {
             Err(err) => return Err(ConsumeAfterNameErrorFull::Token(err)),
         };
 
-        #[derive(Clone, Copy)]
-        struct ValueAndRemaining<'a> {
-            cv: ComponentValue<'a>,
-            remaining: CopyableTokenStream<'a>,
-            // full == cv + remaining
-            full: CopyableTokenStream<'a>,
-        }
-
-        impl<'a> HasConstDummyValue for ValueAndRemaining<'a> {
-            const DUMMY_VALUE: Self = ValueAndRemaining {
-                cv: ComponentValue::PreservedTokens(Token::Whitespace(WhitespaceToken::ONE_SPACE)),
-                remaining: TokenStream::EMPTY.to_copyable(),
-                full: TokenStream::new(" ").to_copyable(),
-            };
-        }
-
         let mut input = input;
 
-        enum ValueList<'a> {
-            Empty,
-            NotEmpty {
-                first: ValueAndRemaining<'a>,
-                last_3: ArrayVec<ValueAndRemaining<'a>, 3>,
-                real_len: usize,
-            },
-        }
-
-        enum ValueListPop2<'a> {
-            Empty,
-            One(ValueAndRemaining<'a>),
-            More {
-                first: ValueAndRemaining<'a>,
-                last: ValueAndRemaining<'a>,
-                real_len: usize,
-            },
-        }
-        impl<'a> ValueListPop2<'a> {
-            const fn span(&self) -> List<'a> {
-                match self {
-                    ValueListPop2::Empty => List::EMPTY,
-                    ValueListPop2::One(v) => List {
-                        full: v.full.before(v.remaining),
-                        len: 1,
-                    },
-                    ValueListPop2::More {
-                        first,
-                        last,
-                        real_len,
-                    } => List {
-                        full: first.full.before(last.remaining),
-                        len: *real_len,
-                    },
-                }
-            }
-        }
-
-        impl<'a> ValueList<'a> {
-            const fn with_push(self, v: ValueAndRemaining<'a>) -> Self {
-                match self {
-                    ValueList::Empty => Self::NotEmpty {
-                        first: v,
-                        last_3: ArrayVec::EMPTY,
-                        real_len: 1,
-                    },
-                    ValueList::NotEmpty {
-                        first,
-                        last_3,
-                        real_len,
-                    } => Self::NotEmpty {
-                        first,
-                        last_3: last_3.with_force_push(v).1,
-                        real_len: real_len + 1,
-                    },
-                }
-            }
-
-            const fn pop_last_2_important(
-                self,
-            ) -> Result<(Important<'a>, ValueListPop2<'a>), Self> {
-                match self {
-                    ValueList::Empty => Err(self),
-                    ValueList::NotEmpty {
-                        first,
-                        ref last_3,
-                        real_len,
-                    } => match last_3.as_slice() {
-                        [a, b, c] => {
-                            debug_assert!(real_len >= 4);
-                            if let Some((bang, important)) = is_bang_important(b.cv, c.cv) {
-                                Ok((
-                                    Important {
-                                        full: b.full.before(c.remaining),
-                                        bang,
-                                        important,
-                                    },
-                                    ValueListPop2::More {
-                                        first,
-                                        last: *a,
-                                        real_len: real_len - 2,
-                                    },
-                                ))
-                            } else {
-                                Err(self)
-                            }
-                        }
-                        [b, c] => {
-                            debug_assert!(real_len == 3);
-
-                            if let Some((bang, important)) = is_bang_important(b.cv, c.cv) {
-                                Ok((
-                                    Important {
-                                        full: b.full.before(c.remaining),
-                                        bang,
-                                        important,
-                                    },
-                                    ValueListPop2::One(first),
-                                ))
-                            } else {
-                                Err(self)
-                            }
-                        }
-                        [c] => {
-                            debug_assert!(real_len == 2);
-                            let b = first;
-                            if let Some((bang, important)) = is_bang_important(b.cv, c.cv) {
-                                Ok((
-                                    Important {
-                                        full: b.full.before(c.remaining),
-                                        bang,
-                                        important,
-                                    },
-                                    ValueListPop2::Empty,
-                                ))
-                            } else {
-                                Err(self)
-                            }
-                        }
-                        [] => {
-                            debug_assert!(real_len == 1);
-
-                            Err(self)
-                        }
-                        _ => unreachable!(),
-                    },
-                }
-            }
-
-            const fn last(&self) -> Option<ValueAndRemaining<'a>> {
-                match self {
-                    ValueList::Empty => None,
-                    ValueList::NotEmpty {
-                        first,
-                        last_3,
-                        real_len: _,
-                    } => Some(match last_3.as_slice().last() {
-                        Some(v) => *v,
-                        None => *first,
-                    }),
-                }
-            }
-
-            const fn span(&self) -> List<'a> {
-                match self {
-                    ValueList::Empty => List::EMPTY,
-                    ValueList::NotEmpty {
-                        first,
-                        last_3,
-                        real_len,
-                    } => match last_3.as_slice().last() {
-                        Some(last) => List {
-                            full: first.full.before(last.remaining),
-                            len: *real_len,
-                        },
-                        None => List {
-                            full: first.full.before(first.remaining),
-                            len: *real_len,
-                        },
-                    },
-                }
-            }
-        }
-
-        // non whitespace values
-        let mut values = ValueList::Empty;
+        let mut values_builder = KnownDeclarationValueList::<L, CAP>::start_builder();
 
         loop {
             let before_next = input.tokens_and_remaining();
@@ -489,13 +328,13 @@ impl<'a> Declaration<'a> {
                                 Ok(input) => input,
                                 Err(err) => return Err(ConsumeAfterNameErrorFull::Token(err)),
                             };
-                            if !cv.is_whitespace() {
-                                values = values.with_push(ValueAndRemaining {
-                                    cv,
-                                    remaining: new_input.tokens_and_remaining_to_copyable(),
-                                    full: before_next.to_copyable(),
-                                });
-                            }
+
+                            values_builder = values_builder.with_push(TokenAndRemaining {
+                                token: cv,
+                                remaining: new_input.tokens_and_remaining(),
+                                full: before_next,
+                            });
+
                             input = new_input;
                             continue;
                         }
@@ -517,24 +356,20 @@ impl<'a> Declaration<'a> {
                         NextFull::Eof(_) => ParseEndReasonFull::Eof,
                     };
 
-                    let after_last = match values.last() {
-                        Some(v) => v.remaining,
-                        None => after_colon,
-                    };
-
-                    let (value, important) = match values.pop_last_2_important() {
-                        Ok((important, values)) => (values.span(), Some(important)),
-                        Err(values) => (values.span(), None),
-                    };
+                    let BuildOutput {
+                        value,
+                        important,
+                        value_and_important,
+                        after_value_and_important,
+                    } = values_builder.build(after_colon);
 
                     return Ok((
                         Self {
-                            full: before_name
-                                .before(&after_last.to_token_stream())
-                                .to_copyable(),
+                            full: before_name.to_copyable().before(after_value_and_important),
                             name,
                             colon,
-                            value: value.into_count(),
+                            value_and_important,
+                            value,
                             important,
                         },
                         reason,
@@ -571,22 +406,9 @@ impl<'a> Declaration<'a> {
     pub fn to_tuple_str(self) -> (&'a str, &'a str, bool) {
         (self.name_as_str(), self.value_as_str(), self.is_important())
     }
-}
 
-const fn is_bang_important<'a>(
-    a: ComponentValue<'a>,
-    b: ComponentValue<'a>,
-) -> Option<(DelimToken<'a>, IdentToken<'a>)> {
-    match (a, b) {
-        (
-            ComponentValue::PreservedTokens(Token::Delim(t)),
-            ComponentValue::PreservedTokens(Token::IdentLike(IdentLikeToken::Ident(ident))),
-        ) if t.value().to_char() == '!'
-            && str_matches_important_ascii_case_insensitive(ident.to_str()) =>
-        {
-            Some((t, ident))
-        }
-        _ => None,
+    pub const fn value_and_important_as_str(&self) -> &'a str {
+        self.value_and_important.to_str()
     }
 }
 
