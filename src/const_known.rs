@@ -66,18 +66,37 @@ impl No {
 macro_rules! define_known_variants {
     (
         $(#$enum_attr:tt)*
-        $enum_vis:vis enum $KnownVariant:ident $($generics_and_rest:tt)*
+        $enum_vis:vis enum $KnownVariant:ident <$($generics_and_rest:tt)*
     ) => {
-        $crate::const_known::__private::parse_generics! {
-            [
-                dollar { $ }
-                enum {
-                    $(#$enum_attr)*
-                    $enum_vis $KnownVariant
-                }
-            ]
+        $crate::__parse_generics! {
+            {
+                generics {}
+                impl_generics {}
+                type_generics {}
+                generics_info {}
+            }
             {$($generics_and_rest)*}
-            => $crate::__define_known_variants_after_parse_generics!
+            {$($generics_and_rest)*}
+            {
+                macro {$crate::__define_known_variants_after_parse_generics!}
+                before {
+                    dollar { $ }
+                    enum {
+                        $(#$enum_attr)*
+                        $enum_vis $KnownVariant
+                    }
+                }
+                after {}
+            }
+        }
+    };
+    (
+        $(#$enum_attr:tt)*
+        $enum_vis:vis enum $KnownVariant:ident $($rest:tt)*
+    ) => {
+        $crate::define_known_variants! {
+            $(#$enum_attr)*
+            $enum_vis enum $KnownVariant <> $($rest)*
         }
     };
 }
@@ -86,6 +105,825 @@ macro_rules! define_known_variants {
 pub mod __private {
     pub use ::syn_lite::{expand_if_else, parse_generics};
     pub use core::stringify;
+
+    #[macro_export]
+    macro_rules! __resolve_finish {
+        (
+            {
+                macro {$($macro_and_bang:tt)*}
+                before { $($before:tt)* }
+                after  { $($after:tt )* }
+            }
+            $($t:tt)*
+        ) => {
+            $($macro_and_bang)* {
+                $($before)*
+                $($t)*
+                $($after)*
+            }
+        };
+    }
+
+    #[macro_export]
+    // till an outer `>`
+    macro_rules! __consume_till_gt {
+        // >
+        (
+            $consumed:tt
+            {> $($_rest:tt)*}
+            $rest:tt
+            [] // no inner `<` before this `>`
+            $finish:tt
+        ) => {
+            $crate::__resolve_finish! {
+                $finish
+                before_gt $consumed
+                gt_and_rest $rest
+            }
+        };
+        // <
+        (
+            {$($consumed:tt)*}
+            {<     $($_rest:tt)*}
+            {$t:tt $($rest:tt )*}
+            [$($got_lt:tt)*]
+            $finish:tt
+        ) => {
+            $crate::__consume_till_gt! {
+                {$($consumed)* $t}
+                {$($rest)*}
+                {$($rest)*}
+                [$($got_lt:tt)* $t]
+                $finish
+            }
+        };
+        // `>` matched a previous `<`
+        (
+            {$($consumed:tt)*}
+            {>     $($_rest:tt)*}
+            {$t:tt $($rest:tt )*}
+            [< $($got_lt:tt)*]
+            $finish:tt
+        ) => {
+            $crate::__consume_till_gt! {
+                {$($consumed)* $t}
+                {$($rest)*}
+                {$($rest)*}
+                [$($got_lt:tt)*]
+                $finish
+            }
+        };
+        // anything else
+        (
+            {$($consumed:tt)*}
+            $_rest:tt
+            {$t:tt $($rest:tt)*}
+            $got_lt:tt
+            $finish:tt
+        ) => {
+            $crate::__consume_till_gt! {
+                {$($consumed)* $t}
+                {$($rest)*}
+                {$($rest)*}
+                $got_lt
+                $finish
+            }
+        };
+    }
+
+    #[macro_export]
+    macro_rules! __parse_bounds_finish_consume_till_gt {
+        (
+            before_gt {$($consumed:tt)*}
+            gt_and_rest {$gt:tt $($rest:tt)*}
+            finish $finish:tt
+        ) => {
+            // continue parse bounds
+            $crate::__parse_bounds! {
+                {$($consumed)* $gt}
+                {$($rest)*}
+                {$($rest)*}
+                $finish
+            }
+        };
+    }
+
+    // till one of the following tokens:
+    // - `,`
+    // - `where`
+    // - an outer `>`
+    // - an outer `=`
+    // - {..}
+    // - EOF
+    #[macro_export]
+    macro_rules! __parse_bounds {
+        // ,
+        (
+            $parsed_bounds:tt
+            {, $($after:tt)*}
+            $rest:tt
+            $finish:tt
+        ) => {
+            $crate::__resolve_finish! {
+                $finish
+                parsed_bounds $parsed_bounds
+                rest $rest
+            }
+        };
+        // where
+        (
+            $parsed_bounds:tt
+            {where $($after:tt)*}
+            $rest:tt
+            $finish:tt
+        ) => {
+            $crate::__resolve_finish! {
+                $finish
+                parsed_bounds $parsed_bounds
+                rest $rest
+            }
+        };
+        // an outer >
+        (
+            $parsed_bounds:tt
+            {> $($after:tt)*}
+            $rest:tt
+            $finish:tt
+        ) => {
+            $crate::__resolve_finish! {
+                $finish
+                parsed_bounds $parsed_bounds
+                rest $rest
+            }
+        };
+        // an outer =
+        (
+            $parsed_bounds:tt
+            {= $($after:tt)*}
+            $rest:tt
+            $finish:tt
+        ) => {
+            $crate::__resolve_finish! {
+                $finish
+                parsed_bounds $parsed_bounds
+                rest $rest
+            }
+        };
+        // {..}
+        (
+            $parsed_bounds:tt
+            {{$($_t:tt)*} $($after:tt)*}
+            $rest:tt
+            $finish:tt
+        ) => {
+            $crate::__resolve_finish! {
+                $finish
+                parsed_bounds $parsed_bounds
+                rest $rest
+            }
+        };
+        // EOF
+        (
+            $parsed_bounds:tt
+            {} // EOF
+            $rest:tt
+            $finish:tt
+        ) => {
+            $crate::__resolve_finish! {
+                $finish
+                parsed_bounds $parsed_bounds
+                rest $rest
+            }
+        };
+        // `<` , consume till a matched `>`
+        (
+            {$($parsed_bounds:tt)*}
+            {<     $($_rest:tt)*}
+            {$t:tt $($rest:tt )*}
+            $finish:tt
+        ) => {
+            $crate::__consume_till_gt! {
+                {$($parsed_bounds)* $t}
+                {$($rest)*}
+                {$($rest)*}
+                []
+                {
+                    macro { $crate::__parse_bounds_finish_consume_till_gt! }
+                    before {}
+                    after { finish $finish }
+                }
+            }
+        };
+        // other cases, just consume
+        (
+            {$($parsed_bounds:tt)*}
+            {$t:tt $($rest:tt)*}
+            $t_and_rest:tt
+            $finish:tt
+        ) => {
+            $crate::__parse_bounds! {
+                {$($parsed_bounds)* $t}
+                {$($rest)*}
+                {$($rest)*}
+                $finish
+            }
+        };
+    }
+
+    #[cfg(test)]
+    mod tests {
+        macro_rules! expect_parsed_bounds {
+            (
+                parsed_bounds {IsKnownParsedValueList<ComponentValue<'a>, CAP>}
+                rest {,}
+            ) => {};
+        }
+        __parse_bounds! {
+            {}
+            {IsKnownParsedValueList<ComponentValue<'a>, CAP>,}
+            {IsKnownParsedValueList<ComponentValue<'a>, CAP>,}
+            {
+                macro {expect_parsed_bounds!}
+                before {}
+                after {}
+            }
+        }
+    }
+
+    #[macro_export]
+    macro_rules! __parse_generics_after_parse_bounds_type {
+        (
+            parsed_generics {
+                generics { $($generics:tt)* }
+                impl_generics { $($impl_generics:tt)* }
+                type_generics { $($type_generics:tt)* }
+                generics_info { $($generics_info:tt)* }
+            }
+            generic_and_colon { $name:ident $colon:tt }
+            parsed_bounds {$($parsed_bounds:tt)*}
+            rest
+            {=      $_ty:ty $(, $($_rest:tt)*)?}
+            {$eq:tt $ty:ty  $(, $($rest:tt )*)?}
+            finish $finish:tt
+        ) => {
+            $crate::__parse_generics! {
+                {
+                    generics {      $($generics)*      $name $colon $($parsed_bounds)* $eq $ty , }
+                    impl_generics { $($impl_generics)* $name $colon $($parsed_bounds)*         , }
+                    type_generics { $($type_generics)* $name                                   , }
+                    generics_info {
+                        $($generics_info)*
+                        {
+                            name { $name }
+                            bounds { $($parsed_bounds)* }
+                            default_ty { $ty }
+                        }
+                    }
+                }
+                {$($rest)*}
+                {$($rest)*}
+                $finish:tt
+            }
+        };
+        (
+            parsed_generics {
+                generics { $($generics:tt)* }
+                impl_generics { $($impl_generics:tt)* }
+                type_generics { $($type_generics:tt)* }
+                generics_info { $($generics_info:tt)* }
+            }
+            generic_and_colon { $name:ident $colon:tt }
+            parsed_bounds {$($parsed_bounds:tt)*}
+            rest $rest:tt $_rest:tt
+            finish $finish:tt
+        ) => {
+            $crate::__parse_generics_match_eof_or_comma! {
+                // trailing comma is added later
+                parsed_generics {
+                    generics { $($generics)* $name $colon $($parsed_bounds)* }
+                    impl_generics { $($impl_generics)* $name $colon $($parsed_bounds)* }
+                    type_generics { $($type_generics)* $name }
+                    generics_info {
+                        $($generics_info)*
+                        {
+                            name { $name }
+                            bounds {$($parsed_bounds)*}
+                        }
+                    }
+                }
+                rest $rest $rest
+                finish $finish
+            }
+        };
+    }
+
+    #[macro_export]
+    macro_rules! __parse_generics_after_parse_bounds {
+        (
+            parsed_generics {
+                generics { $($generics:tt)* }
+                impl_generics { $($impl_generics:tt)* }
+                type_generics { $($type_generics:tt)* }
+                generics_info { $($generics_info:tt)* }
+            }
+            generic_and_colon { $lt:lifetime $colon:tt }
+            parsed_bounds {$($parsed_bounds:tt)*}
+            rest $rest:tt
+            finish $finish:tt
+        ) => {
+            $crate::__parse_generics_match_eof_or_comma! {
+                // trailing comma is added later
+                parsed_generics {
+                    generics { $($generics)* $lt $colon $($parsed_bounds)* }
+                    impl_generics { $($impl_generics)* $lt $colon $($parsed_bounds)* }
+                    type_generics { $($type_generics:tt)* $lt }
+                    generics_info {
+                        $($generics_info:tt)*
+                        {
+                            lifetime {$lt}
+                            bounds {$($parsed_bounds)*}
+                        }
+                    }
+                }
+                rest $rest $rest
+                finish $finish
+            }
+        };
+        (
+            parsed_generics $parsed_generics:tt
+            generic_and_colon { $name:ident $colon:tt }
+            parsed_bounds $parsed_bounds:tt
+            rest $rest:tt
+            finish $finish:tt
+        ) => {
+            $crate::__parse_generics_after_parse_bounds_type! {
+                parsed_generics $parsed_generics
+                generic_and_colon { $name $colon }
+                parsed_bounds $parsed_bounds
+                rest $rest $rest
+                finish $finish
+            }
+        };
+    }
+
+    #[macro_export]
+    macro_rules! __parse_generics_match_eof_or_comma {
+        // add a trailing comma from the rest tokens
+        (
+            parsed_generics {
+                generics { $($generics:tt)* }
+                impl_generics { $($impl_generics:tt)* }
+                type_generics { $($type_generics:tt)* }
+                generics_info $generics_info:tt
+            }
+            rest
+            {,         $($_rest:tt)*}
+            {$comma:tt $($rest:tt )*}
+            finish $finish:tt
+        ) => {
+            $crate::__parse_generics! {
+                {
+                    generics { $($generics)* $comma }
+                    impl_generics { $($impl_generics)* $comma }
+                    type_generics { $($type_generics)* $comma }
+                    generics_info $generics_info
+                }
+                {$($rest)*}
+                {$($rest)*}
+                $finish
+            }
+        };
+        // add a trailing comma
+        (
+            parsed_generics {
+                generics { $($generics:tt)* }
+                impl_generics { $($impl_generics:tt)* }
+                type_generics { $($type_generics:tt)* }
+                generics_info $generics_info:tt
+            }
+            rest $_rest:tt $rest:tt
+            finish $finish:tt
+        ) => {
+            $crate::__parse_generics! {
+                {
+                    generics { $($generics)* , }
+                    impl_generics { $($impl_generics)* , }
+                    type_generics { $($type_generics)* , }
+                    generics_info $generics_info
+                }
+                $_rest
+                $rest
+                $finish
+            }
+        };
+    }
+
+    //  parsed_generics {
+    //      // original with trailing comma
+    //      generics {}
+    //      // remove default types, with trailing comma
+    //      impl_generics {}
+    //      // lifetimes, types, and const names, with trailing comma
+    //      type_generics {}
+    //      generics_info [
+    //          {
+    //              lifetime {'a}
+    //              bounds {}
+    //          }
+    //          {
+    //              name {T}
+    //              bounds {Default}
+    //              default_ty {()}
+    //          }
+    //          {
+    //              name {U}
+    //              bounds {}
+    //          }
+    //          {
+    //              const {const}
+    //              name {N}
+    //              bounds {usize}
+    //          }
+    //          {
+    //              const {const}
+    //              name {M}
+    //              bounds {usize}
+    //              default_expr {0}
+    //          }
+    //      ]
+    //  }
+    #[macro_export]
+    macro_rules! __parse_generics {
+        // >
+        (
+            $parsed_generics:tt
+            { >      $($_rest:tt)* }
+            { $gt:tt $($rest:tt )* }
+            $finish:tt
+        ) => {
+            $crate::__resolve_finish! {
+                $finish
+                parsed_generics $parsed_generics
+                gt {$gt}
+                rest {$($rest)*}
+            }
+        };
+        // 'a:
+        (
+            $parsed:tt
+            { $_lt:lifetime :         $($_bounds_and_rest:tt)* }
+            { $lt:lifetime  $colon:tt $($bounds_and_rest:tt )* }
+            $finish:tt
+        ) => {
+            $crate::__parse_bounds! {
+                {}
+                {$($bounds_and_rest)*}
+                {$($bounds_and_rest)*}
+                {
+                    macro { $crate::__parse_generics_after_parse_bounds! }
+                    before {
+                        parsed_generics $parsed
+                        generic_and_colon { $lt $colon }
+                    }
+                    after {
+                        finish $finish
+                    }
+                }
+            }
+        };
+        // 'a,
+        (
+            {
+                generics { $($generics:tt)* }
+                impl_generics { $($impl_generics:tt)* }
+                type_generics { $($type_generics:tt)* }
+                generics_info { $($generics_info:tt)* }
+            }
+            { $_lt:lifetime ,         $($_rest:tt)* }
+            { $lt:lifetime  $comma:tt $($rest:tt )* }
+            $finish:tt
+        ) => {
+            $crate::__parse_generics! {
+                {
+                    generics { $($generics)* $lt $comma }
+                    impl_generics { $($impl_generics)* $lt $comma }
+                    type_generics { $($type_generics)* $lt $comma }
+                    generics_info {
+                        $($generics_info)*
+                        {
+                            lifetime {$lt}
+                            bounds {}
+                        }
+                    }
+                }
+                {$($rest)*}
+                {$($rest)*}
+                $finish
+            }
+        };
+        // 'a>
+        (
+            {
+                generics { $($generics:tt)* }
+                impl_generics { $($impl_generics:tt)* }
+                type_generics { $($type_generics:tt)* }
+                generics_info { $($generics_info:tt)* }
+            }
+            { $_lt:lifetime >      $($_rest:tt)* }
+            { $lt:lifetime  $gt:tt $($rest:tt )* }
+            $finish:tt
+        ) => {
+            $crate::__resolve_finish! {
+                $finish
+                parsed_generics {
+                    generics { $($generics)* $lt , }
+                    impl_generics { $($impl_generics)* $lt , }
+                    type_generics { $($type_generics)* $lt , }
+                    generics_info {
+                        $($generics_info)*
+                        {
+                            lifetime {$lt}
+                            bounds {}
+                        }
+                    }
+                }
+                gt {$gt}
+                rest {$($rest)*}
+            }
+        };
+        // T:
+        (
+            $parsed:tt
+            { $_name:ident :         $($_bounds_and_rest:tt)* }
+            { $name:ident  $colon:tt $($bounds_and_rest:tt )* }
+            $finish:tt
+        ) => {
+            $crate::__parse_bounds! {
+                {}
+                {$($bounds_and_rest)*}
+                {$($bounds_and_rest)*}
+                {
+                    macro { $crate::__parse_generics_after_parse_bounds! }
+                    before {
+                        parsed_generics $parsed
+                        generic_and_colon { $name $colon }
+                    }
+                    after {
+                        finish $finish
+                    }
+                }
+            }
+        };
+        // T,
+        (
+            {
+                generics { $($generics:tt)* }
+                impl_generics { $($impl_generics:tt)* }
+                type_generics { $($type_generics:tt)* }
+                generics_info { $($generics_info:tt)* }
+            }
+            { $_name:ident ,         $($_rest:tt)* }
+            { $name:ident  $comma:tt $($rest:tt )* }
+            $finish:tt
+        ) => {
+            $crate::__parse_generics! {
+                {
+                    generics { $($generics)* $name $comma }
+                    impl_generics { $($impl_generics)* $name $comma }
+                    type_generics { $($type_generics)* $name $comma }
+                    generics_info {
+                        $($generics_info)*
+                        {
+                            name {$name}
+                            bounds {}
+                        }
+                    }
+                }
+                {$($rest)*}
+                {$($rest)*}
+                $finish
+            }
+        };
+        // T = _,
+        (
+            {
+                generics { $($generics:tt)* }
+                impl_generics { $($impl_generics:tt)* }
+                type_generics { $($type_generics:tt)* }
+                generics_info { $($generics_info:tt)* }
+            }
+            { $_name:ident =      $_default_ty:ty , $($_rest:tt)* }
+            { $name:ident  $eq:tt $default_ty:ty  , $($rest:tt )* }
+            $finish:tt
+        ) => {
+            $crate::__parse_generics! {
+                {
+                    generics { $($generics)* $name $eq $default_ty , }
+                    impl_generics { $($impl_generics)* $name , }
+                    type_generics { $($type_generics)* $name , }
+                    generics_info {
+                        $($generics_info)*
+                        {
+                            name {$name}
+                            bounds {}
+                            default_ty {$default_ty}
+                        }
+                    }
+                }
+                {$($rest)*}
+                {$($rest)*}
+                $finish
+            }
+        };
+        // T>
+        (
+            {
+                generics { $($generics:tt)* }
+                impl_generics { $($impl_generics:tt)* }
+                type_generics { $($type_generics:tt)* }
+                generics_info { $($generics_info:tt)* }
+            }
+            { $_name:ident >      $($_rest:tt)* }
+            { $name:ident  $gt:tt $($rest:tt )* }
+            $finish:tt
+        ) => {
+            $crate::__resolve_finish! {
+                $finish
+                parsed_generics {
+                    generics { $($generics)* $name , }
+                    impl_generics { $($impl_generics)* $name , }
+                    type_generics { $($type_generics)* $name , }
+                    generics_info {
+                        $($generics_info)*
+                        {
+                            name {$name}
+                            bounds {}
+                        }
+                    }
+                }
+                gt {$gt}
+                rest {$($rest)*}
+            }
+        };
+        // T = _>
+        (
+            {
+                generics { $($generics:tt)* }
+                impl_generics { $($impl_generics:tt)* }
+                type_generics { $($type_generics:tt)* }
+                generics_info { $($generics_info:tt)* }
+            }
+            { $_name:ident =      $_default_ty:ty > $($_rest:tt)* }
+            { $name:ident  $eq:tt $default_ty:ty  > $($rest:tt )* }
+            $finish:tt
+        ) => {
+            $crate::__resolve_finish! {
+                $finish
+                parsed_generics {
+                    generics { $($generics)* $name $eq $default_ty, }
+                    impl_generics { $($impl_generics)* $name , }
+                    type_generics { $($type_generics)* $name , }
+                    generics_info {
+                        $($generics_info)*
+                        {
+                            name {$name}
+                            bounds {}
+                            default_ty {$default_ty}
+                        }
+                    }
+                }
+                gt {>}
+                rest {$($rest)*}
+            }
+        };
+        // `const N: usize,` or `const N: usize = expr,`
+        (
+            {
+                generics { $($generics:tt)* }
+                impl_generics { $($impl_generics:tt)* }
+                type_generics { $($type_generics:tt)* }
+                generics_info { $($generics_info:tt)* }
+            }
+            { const        $_name:ident :         $_bounds:ty $(= $_default_expr:expr)? , $($_rest:tt)* }
+            { $const:ident $name:ident  $colon:tt $bounds:ty  $(= $default_expr:expr )? , $($rest:tt )* }
+            $finish:tt
+        ) => {
+            $crate::__parse_generics! {
+                {
+                    generics { $($generics)* $const $name $colon $bounds $(= $default_expr)? , }
+                    impl_generics { $($impl_generics)* $const $name $colon $bounds , }
+                    type_generics { $($type_generics)* $name , }
+                    generics_info {
+                        $($generics_info)*
+                        {
+                            const {$const}
+                            name {$name}
+                            bounds {$bounds}
+                            $(default_expr {$default_expr})?
+                        }
+                    }
+                }
+                {$($rest)*}
+                {$($rest)*}
+                $finish
+            }
+        };
+        // `const N: usize>`
+        (
+            {
+                generics { $($generics:tt)* }
+                impl_generics { $($impl_generics:tt)* }
+                type_generics { $($type_generics:tt)* }
+                generics_info { $($generics_info:tt)* }
+            }
+            { const        $_name:ident :         $_bounds:ty > $($_rest:tt)* }
+            { $const:ident $name:ident  $colon:tt $bounds:ty  > $($rest:tt )* }
+            $finish:tt
+        ) => {
+            $crate::__resolve_finish! {
+                $finish
+                parsed_generics {
+                    generics { $($generics)* $const $name $colon $bounds , }
+                    impl_generics { $($impl_generics)* $const $name $colon $bounds , }
+                    type_generics { $($type_generics)* $name , }
+                    generics_info {
+                        $($generics_info)*
+                        {
+                            const {$const}
+                            name {$name}
+                            bounds {$bounds}
+                        }
+                    }
+                }
+                gt {>}
+                rest {$($rest)*}
+            }
+        };
+        // `const N: usize = path>`
+        (
+            {
+                generics { $($generics:tt)* }
+                impl_generics { $($impl_generics:tt)* }
+                type_generics { $($type_generics:tt)* }
+                generics_info { $($generics_info:tt)* }
+            }
+            { const        $_name:ident :         $_bounds:ty = $_default_expr:path > $($_rest:tt)* }
+            { $const:ident $name:ident  $colon:tt $bounds:ty  = $default_expr:path  > $($rest:tt )* }
+            $finish:tt
+        ) => {
+            $crate::__resolve_finish! {
+                $finish
+                parsed_generics {
+                    generics { $($generics)* $const $name $colon $bounds = $default_expr , }
+                    impl_generics { $($impl_generics)* $const $name $colon $bounds , }
+                    type_generics { $($type_generics)* $name , }
+                    generics_info {
+                        $($generics_info)*
+                        {
+                            const {$const}
+                            name {$name}
+                            bounds {$bounds}
+                            default_expr {$default_expr}
+                        }
+                    }
+                }
+                gt {>}
+                rest {$($rest)*}
+            }
+        };
+        // `const N: usize = {..}>`
+        (
+            {
+                generics { $($generics:tt)* }
+                impl_generics { $($impl_generics:tt)* }
+                type_generics { $($type_generics:tt)* }
+                generics_info { $($generics_info:tt)* }
+            }
+            { const        $_name:ident :         $_bounds:ty = $_default_expr:block >      $($_rest:tt)* }
+            { $const:ident $name:ident  $colon:tt $bounds:ty  = $default_expr:block  $gt:tt $($rest:tt )* }
+            $finish:tt
+        ) => {
+            $crate::__resolve_finish! {
+                $finish
+                parsed_generics {
+                    generics { $($generics)* $const $name $colon $bounds = $default_expr , }
+                    impl_generics { $($impl_generics)* $const $name $colon $bounds , }
+                    type_generics { $($type_generics)* $name , }
+                    generics_info {
+                        $($generics_info)*
+                        {
+                            const {$const}
+                            name {$name}
+                            bounds {$bounds}
+                            default_expr {$default_expr}
+                        }
+                    }
+                }
+                gt {$gt}
+                rest {$($rest)*}
+            }
+        };
+    }
 
     #[macro_export]
     macro_rules! __define_known_variants_trait_IsKnownVariant {
@@ -119,6 +957,56 @@ pub mod __private {
     }
 
     #[macro_export]
+    macro_rules! __define_known_variants_define_enum {
+        (
+            enum {
+                $(#$enum_attr:tt)*
+                $enum_vis:vis $KnownVariant:ident
+            }
+            variant_bounds { $($variant_bounds:tt)* }
+            generics_info {
+                $({
+                    lifetime {$generic_lifetime:lifetime}
+                    bounds {$($generic_lifetime_bounds:tt)*}
+                })*
+                $({
+                    $(const {$generic_const:tt})?
+                    name { $generic_name:ident }
+                    bounds {$($generic_bounds:tt)*}
+                    $(default_ty {$default_ty:ty})?
+                    $(default_expr {$($default_expr:tt)+})?
+                })*
+            }
+            variants {
+                $(
+                    $(#$var_attr:tt)*
+                    $VarName:ident ($VarType:ty)
+                ),*
+                $(,)?
+            }
+        ) => {
+            $(#$enum_attr)*
+            $enum_vis enum $KnownVariant<
+                $($generic_lifetime: $($generic_lifetime_bounds:tt)* ,)*
+                __Variant: $($variant_bounds)*,
+                $(
+                    $($generic_const)?
+                    $generic_name
+                    : $($generic_bounds)*
+                    $(= $default_ty)?
+                    $(= $($default_expr)+)?
+                    ,
+                )*
+            > {
+                $(
+                    $(#$var_attr)*
+                    $VarName(__Variant::$VarName, $VarType),
+                )*
+            }
+        };
+    }
+
+    #[macro_export]
     macro_rules! __define_known_variants_after_parse_generics {
         (
             dollar { $dollar:tt }
@@ -126,13 +1014,14 @@ pub mod __private {
                 $(#$enum_attr:tt)*
                 $enum_vis:vis $KnownVariant:ident
             }
-            generics! {
-                params! { $($params:tt)* }
-                impl_generics! $impl_generics:tt
-                type_generics! { $($type_generics:tt)* }
-                params_name! { $($params_name:tt)* }
+            parsed_generics {
+                generics { $($params:tt)* }
+                impl_generics $impl_generics:tt
+                type_generics { $($type_generics:tt)* }
+                generics_info $generics_info:tt
             }
-            rest! {
+            gt {>}
+            rest {
                 {
                     $(
                         $(#$var_attr:tt)*
@@ -158,15 +1047,19 @@ pub mod __private {
                 $($rest:tt)*
             }
         ) => {
-            $(#$enum_attr)*
-            $enum_vis enum $KnownVariant<
-                __Variant: $IsKnownVariant<$($type_generics)*>,
-                $($params)*
-            > {
-                $(
-                    $(#$var_attr)*
-                    $VarName(__Variant::$VarName, $VarType),
-                )*
+            $crate::__define_known_variants_define_enum! {
+                enum {
+                    $(#$enum_attr)*
+                    $enum_vis $KnownVariant
+                }
+                variant_bounds { $IsKnownVariant<$($type_generics)*> }
+                generics_info $generics_info
+                variants {
+                    $(
+                        $(#$var_attr)*
+                        $VarName ($VarType)
+                    ),*
+                }
             }
 
             $crate::const_known::__private::expand_if_else! { [$($sealed_mod)?]{
@@ -249,6 +1142,7 @@ pub mod __private {
                             impl_generics $impl_generics
                             Self { $KnownVariant }
                             type_generics { $($type_generics)* }
+                            generics_info $generics_info
                             variant_names {$(
                                 $VarName
                             )*}
@@ -366,13 +1260,30 @@ pub mod auto_fns {
             {
                 impl_generics {$($impl_generics:tt)*}
                 Self { $SelfName:ident }
-                type_generics { $($type_generics:tt)* }
+                type_generics $type_generics:tt
+                generics_info {
+                    $({
+                        lifetime {$generic_lifetime:lifetime}
+                        bounds {$($generic_lifetime_bounds:tt)*}
+                    })*
+                    $({
+                        $(const {$generic_const:tt})?
+                        name { $generic_name:ident }
+                        bounds {$($generic_bounds:tt)*}
+                        $(default_ty {$default_ty:ty})?
+                        $(default_expr {$($default_expr:tt)+})?
+                    })*
+                }
                 variant_names {$(
                     $AllVarName:ident
                 )*}
             }
         ) => {
-            impl<$($impl_generics)*> $SelfName<$VarType, $($type_generics)*> {
+            impl<$($impl_generics)*> $SelfName<
+                $($generic_lifetime,)*
+                $VarType,
+                $($generic_name,)*
+            > {
                 $fn_vis const fn $fn_name(v: $VarType) -> Self {
                     Self::$VarName($crate::const_known::Yes, v)
                 }
@@ -412,13 +1323,30 @@ pub mod auto_fns {
             {
                 impl_generics {$($impl_generics:tt)*}
                 Self { $SelfName:ident }
-                type_generics { $($type_generics:tt)* }
+                type_generics $type_generics:tt
+                generics_info {
+                    $({
+                        lifetime {$generic_lifetime:lifetime}
+                        bounds {$($generic_lifetime_bounds:tt)*}
+                    })*
+                    $({
+                        $(const {$generic_const:tt})?
+                        name { $generic_name:ident }
+                        bounds {$($generic_bounds:tt)*}
+                        $(default_ty {$default_ty:ty})?
+                        $(default_expr {$($default_expr:tt)+})?
+                    })*
+                }
                 variant_names {$(
                     $AllVarName:ident
                 )*}
             }
         ) => {
-            impl<$($impl_generics)*> $SelfName<$VarType, $($type_generics)*> {
+            impl<$($impl_generics)*> $SelfName<
+                $($generic_lifetime,)*
+                $VarType,
+                $($generic_name,)*
+            > {
                 $fn_vis const fn $fn_name(self) -> $VarType {
                     match self {
                         $(
@@ -465,13 +1393,30 @@ pub mod auto_fns {
             {
                 impl_generics {$($impl_generics:tt)*}
                 Self { $SelfName:ident }
-                type_generics { $($type_generics:tt)* }
+                type_generics $type_generics:tt
+                generics_info {
+                    $({
+                        lifetime {$generic_lifetime:lifetime}
+                        bounds {$($generic_lifetime_bounds:tt)*}
+                    })*
+                    $({
+                        $(const {$generic_const:tt})?
+                        name { $generic_name:ident }
+                        bounds {$($generic_bounds:tt)*}
+                        $(default_ty {$default_ty:ty})?
+                        $(default_expr {$($default_expr:tt)+})?
+                    })*
+                }
                 variant_names {$(
                     $AllVarName:ident
                 )*}
             }
         ) => {
-            impl<$($impl_generics)*> $SelfName<$VarType, $($type_generics)*> {
+            impl<$($impl_generics)*> $SelfName<
+                $($generic_lifetime,)*
+                $VarType,
+                $($generic_name,)*
+            > {
                 $fn_vis const fn $fn_name(&self) -> &$VarType {
                     match self {
                         $(
@@ -516,6 +1461,39 @@ pub mod auto_fns {
 #[cfg(test)]
 mod tests {
     use std::mem::size_of;
+
+    mod with_lifetimes {
+        define_known_variants!(
+            enum KnownAsSlice<'a, T, const N: usize> {
+                Slice(&'a [T]),
+                Array([T; N]),
+            }
+
+            trait IsKnownAsSlice {}
+
+            fn from_variant();
+        );
+
+        impl<'a, V: IsKnownAsSlice<'a, T, N>, T, const N: usize> KnownAsSlice<'a, V, T, N> {
+            const fn as_slice(&self) -> &[T] {
+                match self {
+                    KnownAsSlice::Slice(_, this) => this,
+                    KnownAsSlice::Array(_, this) => this,
+                }
+            }
+        }
+
+        #[test]
+        const fn test() {
+            let res = KnownAsSlice::<[u8; 0], _, 0>::from_variant([0; 0]);
+
+            assert!(matches!(res.as_slice(), []));
+
+            let res = KnownAsSlice::<&[_], _, 0>::from_variant(&[1, 2, 3]);
+
+            assert!(matches!(res.as_slice(), [1, 2, 3]));
+        }
+    }
 
     define_known_variants!(
         enum KnownAddU8 {
