@@ -141,6 +141,20 @@ pub mod __private {
                 gt_and_rest $rest
             }
         };
+        // >>
+        (
+            {$($consumed:tt)*}
+            {>> $($_rest:tt)*}
+            {>> $($rest:tt )*}
+            [<] // no inner `<` before the second `>`
+            $finish:tt
+        ) => {
+            $crate::__resolve_finish! {
+                $finish
+                before_gt {$($consumed)* >}
+                gt_and_rest { > $($rest)* }
+            }
+        };
         // <
         (
             {$($consumed:tt)*}
@@ -153,7 +167,23 @@ pub mod __private {
                 {$($consumed)* $t}
                 {$($rest)*}
                 {$($rest)*}
-                [$($got_lt:tt)* $t]
+                [$($got_lt)* $t]
+                $finish
+            }
+        };
+        // <<
+        (
+            {$($consumed:tt)*}
+            {<<    $($_rest:tt)*}
+            {$t:tt $($rest:tt )*}
+            [$($got_lt:tt)*]
+            $finish:tt
+        ) => {
+            $crate::__consume_till_gt! {
+                {$($consumed)* $t}
+                {$($rest)*}
+                {$($rest)*}
+                [$($got_lt)* < <] // split `<<` into two `<`
                 $finish
             }
         };
@@ -169,7 +199,23 @@ pub mod __private {
                 {$($consumed)* $t}
                 {$($rest)*}
                 {$($rest)*}
-                [$($got_lt:tt)*]
+                [$($got_lt)*]
+                $finish
+            }
+        };
+        // `>>` matches two previous `<`
+        (
+            {$($consumed:tt)*}
+            {>>    $($_rest:tt)*}
+            {$t:tt $($rest:tt )*}
+            [< < $($got_lt:tt)*]
+            $finish:tt
+        ) => {
+            $crate::__consume_till_gt! {
+                {$($consumed)* $t}
+                {$($rest)*}
+                {$($rest)*}
+                [$($got_lt)*]
                 $finish
             }
         };
@@ -348,6 +394,55 @@ pub mod __private {
                 after {}
             }
         }
+
+        macro_rules! check_gt_3 {
+            (>> >) => {};
+        }
+
+        check_gt_3! {>>>}
+
+        macro_rules! check_lt_3 {
+            (<< <) => {};
+        }
+
+        check_lt_3! {<<<}
+
+        macro_rules! expect_consume_till_gt {
+            (
+                before_gt {AsRef<u8>}
+                gt_and_rest {>}
+            ) => {};
+        }
+        __consume_till_gt!(
+            {}
+            {AsRef<u8>>}
+            {AsRef<u8>>}
+            []
+            {
+                macro {expect_consume_till_gt!}
+                before {}
+                after {}
+            }
+        );
+
+        macro_rules! expect_consume_till_gt_complex {
+            (
+                before_gt {AsRef<<u8 as Trait>::Type<u8>>}
+                gt_and_rest {>}
+            ) => {};
+        }
+
+        __consume_till_gt!(
+            {}
+            {AsRef<<u8 as Trait>::Type<u8>>>}
+            {AsRef<<u8 as Trait>::Type<u8>>>}
+            []
+            {
+                macro {expect_consume_till_gt_complex!}
+                before {}
+                after {}
+            }
+        );
     }
 
     #[macro_export]
