@@ -4,6 +4,8 @@ pub use dummy::HasConstDummyValue;
 pub mod array_vec;
 pub mod lead_vec;
 
+pub mod collect_nothing;
+
 pub mod known;
 
 pub mod count;
