@@ -3,9 +3,12 @@ use std::iter::FusedIterator;
 use crate::{
     collections::{
         array_vec::ArrayVec,
+        collect_nothing::CollectNothing,
+        component_value_list::{
+            IsKnownComponentValueList, IsKnownComponentValueListWithConstEmpty,
+        },
         count::Count,
         declaration_value_list::{builder::BuildOutput, KnownDeclarationValueList},
-        parsed_value_list::IsKnownParsedValueList,
     },
     parse::component_value::{
         ComponentValueParseList, ListParseFullError, NextFull, TokenAndRemaining,
@@ -29,16 +32,12 @@ use super::component_value::{
 };
 
 #[derive(Debug, Clone, Copy)]
-pub struct Declaration<
-    'a,
-    L: IsKnownParsedValueList<ComponentValue<'a>, CAP> = Count,
-    const CAP: usize = 0,
-> {
+pub struct Declaration<'a, L: IsKnownComponentValueList<'a> = CollectNothing> {
     full: CopyableTokenStream<'a>,
     name: IdentToken<'a>,
     colon: Colon<'a>,
     value_and_important: CopyableTokenStream<'a>,
-    value: KnownDeclarationValueList<'a, L, CAP>,
+    value: KnownDeclarationValueList<'a, L>,
     important: Option<Important<'a>>,
 }
 
@@ -222,9 +221,7 @@ impl<'a> Declaration<'a> {
     }
 }
 
-impl<'a, L: IsKnownParsedValueList<ComponentValue<'a>, CAP>, const CAP: usize>
-    Declaration<'a, L, CAP>
-{
+impl<'a, L: IsKnownComponentValueList<'a>> Declaration<'a, L> {
     /// nested is false
     pub(crate) const fn try_consume_next(
         input: TokenStreamProcess<'a>,
@@ -317,7 +314,7 @@ impl<'a, L: IsKnownParsedValueList<ComponentValue<'a>, CAP>, const CAP: usize>
 
         let mut input = input;
 
-        let mut values_builder = KnownDeclarationValueList::<L, CAP>::start_builder();
+        let mut values_builder = KnownDeclarationValueList::<L>::start_builder();
 
         loop {
             let before_next = input.tokens_and_remaining();
@@ -415,7 +412,7 @@ impl<'a, L: IsKnownParsedValueList<ComponentValue<'a>, CAP>, const CAP: usize>
     }
 }
 
-impl<'a, const CAP: usize> Declaration<'a, ArrayVec<ComponentValue<'a>, CAP>, CAP> {
+impl<'a, const CAP: usize> Declaration<'a, ArrayVec<ComponentValue<'a>, CAP>> {
     pub const fn value_as_slice(&self) -> &[ComponentValue<'a>] {
         self.value
             .as_known_parsed_value_list()
@@ -451,12 +448,9 @@ pub struct DeclarationParseList<'a> {
 }
 
 impl<'a> DeclarationParseList<'a> {
-    pub const fn try_into_next<
-        L: IsKnownParsedValueList<ComponentValue<'a>, CAP>,
-        const CAP: usize,
-    >(
+    pub const fn try_into_next<L: IsKnownComponentValueList<'a>>(
         self,
-    ) -> Result<(Option<Declaration<'a, L, CAP>>, Self), DeclarationParseListError<'a>> {
+    ) -> Result<(Option<Declaration<'a, L>>, Self), DeclarationParseListError<'a>> {
         match self.inner {
             Ok(mut input) => {
                 loop {
@@ -523,9 +517,9 @@ impl<'a> DeclarationParseList<'a> {
     /// - further calling [`DeclarationParseList::try_next`] would emit `Ok((None, EMPTY))`.
     ///
     /// A const version of this method is [`Self::try_into_next`].
-    pub fn try_next<L: IsKnownParsedValueList<ComponentValue<'a>, CAP>, const CAP: usize>(
+    pub fn try_next<L: IsKnownComponentValueList<'a>>(
         &mut self,
-    ) -> Result<Option<Declaration<'a, L, CAP>>, DeclarationParseListError<'a>> {
+    ) -> Result<Option<Declaration<'a, L>>, DeclarationParseListError<'a>> {
         const DUMMY: DeclarationParseList = DeclarationParseList {
             inner: Err(TokenParseError::DUMMY),
         };
@@ -546,9 +540,9 @@ impl<'a> DeclarationParseList<'a> {
         }
     }
 
-    pub const fn into_iter<L: IsKnownParsedValueList<ComponentValue<'a>, CAP>, const CAP: usize>(
+    pub const fn into_iter<L: IsKnownComponentValueList<'a>>(
         self,
-    ) -> DeclarationParseListIntoIter<'a, L, CAP> {
+    ) -> DeclarationParseListIntoIter<'a, L> {
         DeclarationParseListIntoIter {
             inner: self,
             _phantom: std::marker::PhantomData,
@@ -570,21 +564,15 @@ pub enum DeclarationParseError<'a> {
     UnexpectedToken(UnexpectedTokenError<'a>),
 }
 
-pub struct DeclarationParseListIntoIter<
-    'a,
-    L: IsKnownParsedValueList<ComponentValue<'a>, CAP>,
-    const CAP: usize,
-> {
+pub struct DeclarationParseListIntoIter<'a, L: IsKnownComponentValueList<'a>> {
     inner: DeclarationParseList<'a>,
     _phantom: std::marker::PhantomData<L>,
 }
 
-impl<'a, L: IsKnownParsedValueList<ComponentValue<'a>, CAP>, const CAP: usize>
-    DeclarationParseListIntoIter<'a, L, CAP>
-{
+impl<'a, L: IsKnownComponentValueList<'a>> DeclarationParseListIntoIter<'a, L> {
     pub const fn try_into_next(
         self,
-    ) -> Result<(Option<Declaration<'a, L, CAP>>, Self), DeclarationParseListError<'a>> {
+    ) -> Result<(Option<Declaration<'a, L>>, Self), DeclarationParseListError<'a>> {
         match self.inner.try_into_next() {
             Ok((v, this)) => Ok((v, this.into_iter())),
             Err(err) => Err(err),
@@ -592,7 +580,7 @@ impl<'a, L: IsKnownParsedValueList<ComponentValue<'a>, CAP>, const CAP: usize>
     }
     pub fn try_next(
         &mut self,
-    ) -> Result<Option<Declaration<'a, L, CAP>>, DeclarationParseListError<'a>> {
+    ) -> Result<Option<Declaration<'a, L>>, DeclarationParseListError<'a>> {
         self.inner.try_next()
     }
 }
@@ -600,17 +588,12 @@ impl<'a, L: IsKnownParsedValueList<ComponentValue<'a>, CAP>, const CAP: usize>
 /// After the first `Some(Err)`:
 /// - further calling [`Iterator::next`] would emit `None`.
 /// - further calling [`DeclarationParseList::try_next`] would emit `Ok((None, EMPTY))`.
-impl<'a, L: IsKnownParsedValueList<ComponentValue<'a>, CAP>, const CAP: usize> Iterator
-    for DeclarationParseListIntoIter<'a, L, CAP>
-{
-    type Item = Result<Declaration<'a, L, CAP>, DeclarationParseListError<'a>>;
+impl<'a, L: IsKnownComponentValueList<'a>> Iterator for DeclarationParseListIntoIter<'a, L> {
+    type Item = Result<Declaration<'a, L>, DeclarationParseListError<'a>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.try_next().transpose()
     }
 }
 
-impl<'a, L: IsKnownParsedValueList<ComponentValue<'a>, CAP>, const CAP: usize> FusedIterator
-    for DeclarationParseListIntoIter<'a, L, CAP>
-{
-}
+impl<'a, L: IsKnownComponentValueList<'a>> FusedIterator for DeclarationParseListIntoIter<'a, L> {}

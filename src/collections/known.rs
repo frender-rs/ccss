@@ -6,16 +6,76 @@ use super::{
 };
 
 #[non_exhaustive]
-#[derive(Clone, Copy)]
-pub enum KnownCollection<V: IsKnownCollection> {
+pub enum KnownCollection<V: IsKnownCollection<T>, T> {
     ArrayVec(V::ArrayVec, V::ArrayVecType),
     LeadVec(V::LeadVec, V::LeadVecType),
     Count(V::Count, Count),
     CollectNothing(V::CollectNothing, CollectNothing),
 }
 
+impl<
+        V: IsKnownCollection<
+            T,
+            ArrayVecType = ArrayVec<T, ARRAY_VEC_CAP>,
+            LeadVecType = LeadVec<T, LEAD_VEC_CAP>,
+        >,
+        T,
+        const ARRAY_VEC_CAP: usize,
+        const LEAD_VEC_CAP: usize,
+    > std::fmt::Debug for KnownCollection<V, T>
+where
+    T: std::fmt::Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ArrayVec(_, this) => this.fmt(f),
+            Self::LeadVec(_, this) => this.fmt(f),
+            Self::Count(_, this) => this.fmt(f),
+            Self::CollectNothing(_, this) => this.fmt(f),
+        }
+    }
+}
+
+impl<
+        V: IsKnownCollection<
+            T,
+            ArrayVecType = ArrayVec<T, ARRAY_VEC_CAP>,
+            LeadVecType = LeadVec<T, LEAD_VEC_CAP>,
+        >,
+        T,
+        const ARRAY_VEC_CAP: usize,
+        const LEAD_VEC_CAP: usize,
+    > Clone for KnownCollection<V, T>
+where
+    T: Clone,
+{
+    fn clone(&self) -> Self {
+        match self {
+            Self::ArrayVec(arg0, arg1) => Self::ArrayVec(*arg0, arg1.clone()),
+            Self::LeadVec(arg0, arg1) => Self::LeadVec(*arg0, arg1.clone()),
+            Self::Count(arg0, arg1) => Self::Count(*arg0, arg1.clone()),
+            Self::CollectNothing(arg0, arg1) => Self::CollectNothing(*arg0, arg1.clone()),
+        }
+    }
+}
+
+impl<
+        V: IsKnownCollection<
+            T,
+            ArrayVecType = ArrayVec<T, ARRAY_VEC_CAP>,
+            LeadVecType = LeadVec<T, LEAD_VEC_CAP>,
+        >,
+        T,
+        const ARRAY_VEC_CAP: usize,
+        const LEAD_VEC_CAP: usize,
+    > Copy for KnownCollection<V, T>
+where
+    T: Copy,
+{
+}
+
 mod sealed {
-    pub trait IsKnownCollection {}
+    pub trait IsKnownCollection<T> {}
     pub trait IsArrayVec {}
     pub trait IsLeadVec {}
 }
@@ -36,22 +96,22 @@ impl<T, const N: usize> IsLeadVec for LeadVec<T, N> {
     type Item = T;
 }
 
-pub trait IsKnownCollection: sealed::IsKnownCollection + Sized {
-    type ArrayVecType: IsArrayVec<Item = <Self::LeadVecType as IsLeadVec>::Item>;
+pub trait IsKnownCollection<T>: Sized + sealed::IsKnownCollection<T> {
+    type ArrayVecType: IsArrayVec<Item = T>;
     type ArrayVec: YesOrNo;
-    type LeadVecType: IsLeadVec;
+    type LeadVecType: IsLeadVec<Item = T>;
     type LeadVec: YesOrNo;
     type Count: YesOrNo;
     type CollectNothing: YesOrNo;
 }
 
-pub trait IsKnownCollectionWithConstEmpty: IsKnownCollection {
+pub trait IsKnownCollectionWithConstEmpty<T>: IsKnownCollection<T> + Sized {
     const EMPTY_COLLECTION: Self;
-    const EMPTY_COLLECTION_AS_KNOWN_COLLECTION: KnownCollection<Self>;
+    const EMPTY_COLLECTION_AS_KNOWN: KnownCollection<Self, T>;
 }
 
-impl<T, const CAP: usize> sealed::IsKnownCollection for ArrayVec<T, CAP> {}
-impl<T, const CAP: usize> IsKnownCollection for ArrayVec<T, CAP> {
+impl<T, const CAP: usize> sealed::IsKnownCollection<T> for ArrayVec<T, CAP> {}
+impl<T, const CAP: usize> IsKnownCollection<T> for ArrayVec<T, CAP> {
     type ArrayVecType = Self;
     type ArrayVec = Yes;
     type LeadVecType = LeadVec<T, 0>;
@@ -59,14 +119,16 @@ impl<T, const CAP: usize> IsKnownCollection for ArrayVec<T, CAP> {
     type Count = No;
     type CollectNothing = No;
 }
-impl<T: HasConstDummyValue, const CAP: usize> IsKnownCollectionWithConstEmpty for ArrayVec<T, CAP> {
+impl<T: HasConstDummyValue, const CAP: usize> IsKnownCollectionWithConstEmpty<T>
+    for ArrayVec<T, CAP>
+{
     const EMPTY_COLLECTION: Self = Self::EMPTY;
-    const EMPTY_COLLECTION_AS_KNOWN_COLLECTION: KnownCollection<Self> =
-        KnownCollection::<Self>::from_variant(Self::EMPTY);
+    const EMPTY_COLLECTION_AS_KNOWN: KnownCollection<Self, T> =
+        KnownCollection::<Self, T>::from_variant(Self::EMPTY);
 }
 
-impl<T, const CAP: usize> sealed::IsKnownCollection for LeadVec<T, CAP> {}
-impl<T, const CAP: usize> IsKnownCollection for LeadVec<T, CAP> {
+impl<T, const CAP: usize> sealed::IsKnownCollection<T> for LeadVec<T, CAP> {}
+impl<T, const CAP: usize> IsKnownCollection<T> for LeadVec<T, CAP> {
     type ArrayVecType = ArrayVec<T, 0>;
     type ArrayVec = No;
     type LeadVecType = Self;
@@ -74,64 +136,66 @@ impl<T, const CAP: usize> IsKnownCollection for LeadVec<T, CAP> {
     type Count = No;
     type CollectNothing = No;
 }
-impl<T: HasConstDummyValue, const CAP: usize> IsKnownCollectionWithConstEmpty for LeadVec<T, CAP> {
+impl<T: HasConstDummyValue, const CAP: usize> IsKnownCollectionWithConstEmpty<T>
+    for LeadVec<T, CAP>
+{
     const EMPTY_COLLECTION: Self = Self::EMPTY;
-    const EMPTY_COLLECTION_AS_KNOWN_COLLECTION: KnownCollection<Self> =
-        KnownCollection::<Self>::from_variant(Self::EMPTY);
+    const EMPTY_COLLECTION_AS_KNOWN: KnownCollection<Self, T> =
+        KnownCollection::<Self, T>::from_variant(Self::EMPTY);
 }
 
-impl sealed::IsKnownCollection for Count {}
-impl IsKnownCollection for Count {
-    type ArrayVecType = ArrayVec<No, 0>;
+impl<T> sealed::IsKnownCollection<T> for Count {}
+impl<T> IsKnownCollection<T> for Count {
+    type ArrayVecType = ArrayVec<T, 0>;
     type ArrayVec = No;
-    type LeadVecType = LeadVec<No, 0>;
+    type LeadVecType = LeadVec<T, 0>;
     type LeadVec = No;
     type Count = Yes;
     type CollectNothing = No;
 }
-impl IsKnownCollectionWithConstEmpty for Count {
+impl<T> IsKnownCollectionWithConstEmpty<T> for Count {
     const EMPTY_COLLECTION: Self = Self::EMPTY;
-    const EMPTY_COLLECTION_AS_KNOWN_COLLECTION: KnownCollection<Self> =
-        KnownCollection::<Self>::from_variant(Self::EMPTY);
+    const EMPTY_COLLECTION_AS_KNOWN: KnownCollection<Self, T> =
+        KnownCollection::<Self, T>::from_variant(Self::EMPTY);
 }
 
-impl sealed::IsKnownCollection for CollectNothing {}
-impl IsKnownCollection for CollectNothing {
-    type ArrayVecType = ArrayVec<No, 0>;
+impl<T> sealed::IsKnownCollection<T> for CollectNothing {}
+impl<T> IsKnownCollection<T> for CollectNothing {
+    type ArrayVecType = ArrayVec<T, 0>;
     type ArrayVec = No;
-    type LeadVecType = LeadVec<No, 0>;
+    type LeadVecType = LeadVec<T, 0>;
     type LeadVec = No;
     type Count = No;
     type CollectNothing = Yes;
 }
-impl IsKnownCollectionWithConstEmpty for CollectNothing {
+impl<T> IsKnownCollectionWithConstEmpty<T> for CollectNothing {
     const EMPTY_COLLECTION: Self = Self;
-    const EMPTY_COLLECTION_AS_KNOWN_COLLECTION: KnownCollection<Self> =
-        KnownCollection::<Self>::from_variant(Self);
+    const EMPTY_COLLECTION_AS_KNOWN: KnownCollection<Self, T> =
+        KnownCollection::<Self, T>::from_variant(Self);
 }
 
-impl<T, const CAP: usize> KnownCollection<ArrayVec<T, CAP>> {
+impl<T, const CAP: usize> KnownCollection<ArrayVec<T, CAP>, T> {
     pub const fn from_variant(v: ArrayVec<T, CAP>) -> Self {
         Self::ArrayVec(Yes, v)
     }
 }
-impl<T, const CAP: usize> KnownCollection<LeadVec<T, CAP>> {
+impl<T, const CAP: usize> KnownCollection<LeadVec<T, CAP>, T> {
     pub const fn from_variant(v: LeadVec<T, CAP>) -> Self {
         Self::LeadVec(Yes, v)
     }
 }
-impl KnownCollection<Count> {
+impl<T> KnownCollection<Count, T> {
     pub const fn from_variant(v: Count) -> Self {
         Self::Count(Yes, v)
     }
 }
-impl KnownCollection<CollectNothing> {
+impl<T> KnownCollection<CollectNothing, T> {
     pub const fn from_variant(v: CollectNothing) -> Self {
         Self::CollectNothing(Yes, v)
     }
 }
 
-impl<T, const CAP: usize> KnownCollection<ArrayVec<T, CAP>> {
+impl<T, const CAP: usize> KnownCollection<ArrayVec<T, CAP>, T> {
     pub const fn as_variant(&self) -> &ArrayVec<T, CAP> {
         match self {
             Self::ArrayVec(Yes, this) => this,
@@ -141,7 +205,7 @@ impl<T, const CAP: usize> KnownCollection<ArrayVec<T, CAP>> {
         }
     }
 }
-impl<T, const CAP: usize> KnownCollection<LeadVec<T, CAP>> {
+impl<T, const CAP: usize> KnownCollection<LeadVec<T, CAP>, T> {
     pub const fn as_variant(&self) -> &LeadVec<T, CAP> {
         match self {
             Self::ArrayVec(no, _) => match *no {},
@@ -151,7 +215,7 @@ impl<T, const CAP: usize> KnownCollection<LeadVec<T, CAP>> {
         }
     }
 }
-impl KnownCollection<Count> {
+impl<T> KnownCollection<Count, T> {
     pub const fn as_variant(&self) -> &Count {
         match self {
             Self::ArrayVec(no, _) => match *no {},
@@ -161,7 +225,7 @@ impl KnownCollection<Count> {
         }
     }
 }
-impl KnownCollection<CollectNothing> {
+impl<T> KnownCollection<CollectNothing, T> {
     pub const fn as_variant(&self) -> &CollectNothing {
         match self {
             Self::ArrayVec(no, _) => match *no {},
@@ -172,7 +236,7 @@ impl KnownCollection<CollectNothing> {
     }
 }
 
-impl KnownCollection<CollectNothing> {
+impl<T> KnownCollection<CollectNothing, T> {
     pub const fn into_variant(self) -> CollectNothing {
         match self {
             Self::ArrayVec(no, _) => match no {},
@@ -183,28 +247,10 @@ impl KnownCollection<CollectNothing> {
     }
 }
 
-impl<V, Item, const ARRAY_VEC_CAP: usize, const LEAD_VEC_CAP: usize> std::fmt::Debug
-    for KnownCollection<V>
-where
-    Item: std::fmt::Debug,
-    V: IsKnownCollection<
-        ArrayVecType = ArrayVec<Item, ARRAY_VEC_CAP>,
-        LeadVecType = LeadVec<Item, LEAD_VEC_CAP>,
-    >,
-{
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::ArrayVec(_, this) => this.fmt(f),
-            Self::LeadVec(_, this) => this.fmt(f),
-            Self::Count(_, this) => this.fmt(f),
-            Self::CollectNothing(_, this) => this.fmt(f),
-        }
-    }
-}
-
-impl<V, T, const ARRAY_VEC_CAP: usize, const LEAD_VEC_CAP: usize> KnownCollection<V>
+impl<V, T, const ARRAY_VEC_CAP: usize, const LEAD_VEC_CAP: usize> KnownCollection<V, T>
 where
     V: IsKnownCollection<
+        T,
         ArrayVecType = ArrayVec<T, ARRAY_VEC_CAP>,
         LeadVecType = LeadVec<T, LEAD_VEC_CAP>,
     >,

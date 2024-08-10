@@ -1,8 +1,7 @@
 use crate::{
     collections::{
-        count::Count,
-        parsed_value_list::{IsKnownParsedValueList, KnownParsedValueList},
-        HasConstDummyValue,
+        count::Count, known::IsKnownCollectionWithConstEmpty,
+        parsed_value_list::KnownParsedValueList, HasConstDummyValue,
     },
     token::{
         stream::{
@@ -43,12 +42,6 @@ pub(crate) struct List<'a> {
 }
 
 impl<'a> List<'a> {
-    pub(crate) const fn into_count<T, const CAP: usize>(
-        self,
-    ) -> KnownParsedValueList<'a, Count, T, CAP> {
-        KnownParsedValueList::new_count(self.full, self.len)
-    }
-
     pub const EMPTY: Self = Self {
         full: TokenStream::EMPTY.to_copyable(),
         len: 0,
@@ -253,6 +246,13 @@ impl<'a> ComponentValue<'a> {
             _ => false,
         }
     }
+
+    pub(crate) const fn as_whitespace(&self) -> Option<&crate::token::tokens::WhitespaceToken<'a>> {
+        match self {
+            ComponentValue::PreservedTokens(Token::Whitespace(t)) => Some(t),
+            _ => None,
+        }
+    }
 }
 
 pub struct ComponentValueParseList<'a> {
@@ -293,8 +293,7 @@ macro_rules! match_no_stop_token {
     };
 }
 
-pub type KnownComponentValueList<'a, L, const CAP: usize> =
-    KnownParsedValueList<'a, L, ComponentValue<'a>, CAP>;
+pub type KnownComponentValueList<'a, L> = KnownParsedValueList<'a, L, ComponentValue<'a>>;
 
 impl<'a> ComponentValueParseList<'a> {
     /// Returns `Ok(None, EMPTY)` is self is empty.
@@ -357,16 +356,13 @@ impl<'a> ComponentValueParseList<'a> {
     /// stop_token is unset.
     /// nested is false.
     pub const fn try_collect_into_known<
-        L: IsKnownParsedValueList<ComponentValue<'a>, CAP>,
+        L: IsKnownCollectionWithConstEmpty<ComponentValue<'a>>,
         const CAP: usize,
     >(
         self,
     ) -> Result<
-        (KnownComponentValueList<'a, L, CAP>, Self),
-        (
-            KnownComponentValueList<'a, L, CAP>,
-            ListParseNotNestedError<'a>,
-        ),
+        (KnownComponentValueList<'a, L>, Self),
+        (KnownComponentValueList<'a, L>, ListParseNotNestedError<'a>),
     > {
         let mut input = match self.inner {
             Ok(v) => v,

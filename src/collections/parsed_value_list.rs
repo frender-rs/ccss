@@ -2,55 +2,58 @@ use crate::token::stream::CopyableTokenStream;
 
 use super::{
     array_vec::ArrayVec,
-    count::Count,
-    known::{IsKnownCollection, KnownCollection},
+    known::{IsKnownCollection, IsKnownCollectionWithConstEmpty, KnownCollection},
     lead_vec::LeadVec,
-    HasConstDummyValue,
 };
 
-pub trait IsKnownParsedValueList<T, const CAP: usize>: IsKnownCollection<T, CAP> + Sized {
-    const EMPTY_LIST_AS_KNOWN_COLLECTION: KnownCollection<Self, T, CAP>;
-}
-
-impl<T, const CAP: usize> IsKnownParsedValueList<T, CAP> for ArrayVec<T, CAP>
-where
-    T: HasConstDummyValue,
-{
-    const EMPTY_LIST_AS_KNOWN_COLLECTION: KnownCollection<Self, T, CAP> =
-        KnownCollection::<Self, T, CAP>::from_collection(Self::EMPTY);
-}
-
-impl<T, const CAP: usize> IsKnownParsedValueList<T, CAP> for LeadVec<T, CAP>
-where
-    T: HasConstDummyValue,
-{
-    const EMPTY_LIST_AS_KNOWN_COLLECTION: KnownCollection<Self, T, CAP> =
-        KnownCollection::<Self, T, CAP>::from_collection(Self::EMPTY);
-}
-
-impl<T, const CAP: usize> IsKnownParsedValueList<T, CAP> for Count {
-    const EMPTY_LIST_AS_KNOWN_COLLECTION: KnownCollection<Self, T, CAP> =
-        KnownCollection::<Self, T, CAP>::from_collection(Self::EMPTY);
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct KnownParsedValueList<'a, L: IsKnownParsedValueList<T, CAP>, T, const CAP: usize> {
+pub struct KnownParsedValueList<'a, L: IsKnownCollection<T>, T> {
     /// full contains parsed and unparsed
     full: CopyableTokenStream<'a>,
-    parsed: KnownCollection<L, T, CAP>,
+    parsed: KnownCollection<L, T>,
     unparsed: CopyableTokenStream<'a>,
 }
 
-impl<'a, L: IsKnownParsedValueList<T, CAP>, T, const CAP: usize>
-    KnownParsedValueList<'a, L, T, CAP>
+impl<'a, L: IsKnownCollection<T>, T> std::fmt::Debug for KnownParsedValueList<'a, L, T>
+where
+    KnownCollection<L, T>: std::fmt::Debug,
 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("KnownParsedValueList")
+            .field("full", &self.full)
+            .field("parsed", &self.parsed)
+            .field("unparsed", &self.unparsed)
+            .finish()
+    }
+}
+
+impl<'a, L: IsKnownCollection<T>, T> Clone for KnownParsedValueList<'a, L, T>
+where
+    KnownCollection<L, T>: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            full: self.full,
+            parsed: self.parsed.clone(),
+            unparsed: self.unparsed,
+        }
+    }
+}
+
+impl<'a, L: IsKnownCollection<T>, T> Copy for KnownParsedValueList<'a, L, T> where
+    KnownCollection<L, T>: Copy
+{
+}
+
+impl<'a, L: IsKnownCollectionWithConstEmpty<T>, T> KnownParsedValueList<'a, L, T> {
     pub(crate) const EMPTY: Self = Self {
         full: CopyableTokenStream::EMPTY,
-        parsed: L::EMPTY_LIST_AS_KNOWN_COLLECTION,
+        parsed: L::EMPTY_COLLECTION_AS_KNOWN,
         unparsed: CopyableTokenStream::EMPTY,
     };
+}
 
-    pub(crate) const fn start_builder() -> KnownParsedValueListBuilder<'a, L, T, CAP> {
+impl<'a, L: IsKnownCollection<T>, T> KnownParsedValueList<'a, L, T> {
+    pub(crate) const fn start_builder() -> KnownParsedValueListBuilder<'a, L, T> {
         KnownParsedValueListBuilder::Empty
     }
 
@@ -62,46 +65,40 @@ impl<'a, L: IsKnownParsedValueList<T, CAP>, T, const CAP: usize>
         self.full.to_str()
     }
 
-    pub(crate) const fn parsed(&self) -> &KnownCollection<L, T, CAP> {
+    pub(crate) const fn parsed(&self) -> &KnownCollection<L, T> {
         &self.parsed
     }
 }
 
-impl<'a, T, const CAP: usize> KnownParsedValueList<'a, Count, T, CAP> {
-    pub(crate) const fn new_count(full: CopyableTokenStream<'a>, len: usize) -> Self {
-        KnownParsedValueList {
-            full,
-            parsed: KnownCollection::<Count, T, CAP>::from_collection(Count { len }),
-            unparsed: full,
-        }
-    }
-}
-
-pub(crate) enum KnownParsedValueListBuilder<
-    'a,
-    L: IsKnownParsedValueList<T, CAP>,
-    T,
-    const CAP: usize,
-> {
+pub(crate) enum KnownParsedValueListBuilder<'a, L: IsKnownCollection<T>, T> {
     Empty,
     AllParsed {
         parsed_and_remaining: CopyableTokenStream<'a>,
-        parsed: KnownCollection<L, T, CAP>,
+        parsed: KnownCollection<L, T>,
     },
     SomeNotParsed {
         full_and_remaining: CopyableTokenStream<'a>,
-        parsed: KnownCollection<L, T, CAP>,
+        parsed: KnownCollection<L, T>,
         unparsed_and_remaining: CopyableTokenStream<'a>,
     },
 }
 
-impl<'a, L: IsKnownParsedValueList<T, CAP>, T, const CAP: usize>
-    KnownParsedValueListBuilder<'a, L, T, CAP>
+impl<
+        'a,
+        L: IsKnownCollectionWithConstEmpty<
+            T,
+            ArrayVecType = ArrayVec<T, ARRAY_VEC_CAP>,
+            LeadVecType = LeadVec<T, LEAD_VEC_CAP>,
+        >,
+        T,
+        const ARRAY_VEC_CAP: usize,
+        const LEAD_VEC_CAP: usize,
+    > KnownParsedValueListBuilder<'a, L, T>
 {
     pub(crate) const fn build(
         self,
         remaining: CopyableTokenStream<'a>,
-    ) -> KnownParsedValueList<'a, L, T, CAP>
+    ) -> KnownParsedValueList<'a, L, T>
     where
         T: Copy,
     {
@@ -110,7 +107,7 @@ impl<'a, L: IsKnownParsedValueList<T, CAP>, T, const CAP: usize>
                 let empty = remaining.before(remaining);
                 KnownParsedValueList {
                     full: empty,
-                    parsed: L::EMPTY_LIST_AS_KNOWN_COLLECTION,
+                    parsed: L::EMPTY_COLLECTION_AS_KNOWN,
                     unparsed: empty,
                 }
             }
@@ -144,7 +141,7 @@ impl<'a, L: IsKnownParsedValueList<T, CAP>, T, const CAP: usize>
     {
         match self {
             KnownParsedValueListBuilder::Empty => {
-                let parsed = L::EMPTY_LIST_AS_KNOWN_COLLECTION;
+                let parsed = L::EMPTY_COLLECTION_AS_KNOWN;
 
                 let (parsed, fake) = parsed.with_push_maybe_fake(value);
 

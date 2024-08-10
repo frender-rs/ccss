@@ -1,26 +1,67 @@
-use crate::parse::component_value::ComponentValue;
+use crate::{parse::component_value::ComponentValue, token::stream::CopyableTokenStream};
 
-use super::parsed_value_list::{IsKnownParsedValueList, KnownParsedValueList};
+use super::{
+    array_vec::ArrayVec,
+    component_value_list::{
+        IsKnownComponentValueList, IsKnownComponentValueListWithConstEmpty, KnownComponentValueList,
+    },
+    known::IsKnownCollection,
+    lead_vec::LeadVec,
+};
 
 /// A list of [`ComponentValue`] with the following constraints:
-/// - None of the values [is whitespace](ComponentValue::is_whitespace).
+/// - The list doesn't start or end with whitespace.
+/// - In the list, no whitespace values are adjacent.
 /// - The list doesn't end with `!` `important`.
-#[derive(Debug, Clone, Copy)]
-pub struct KnownDeclarationValueList<
-    'a,
-    L: IsKnownParsedValueList<ComponentValue<'a>, CAP>,
-    const CAP: usize,
-> {
-    inner: KnownParsedValueList<'a, L, ComponentValue<'a>, CAP>,
+pub struct KnownDeclarationValueList<'a, L: IsKnownComponentValueList<'a>> {
+    inner: KnownComponentValueList<'a, L>,
 }
 
-impl<'a, L: IsKnownParsedValueList<ComponentValue<'a>, CAP>, const CAP: usize>
-    KnownDeclarationValueList<'a, L, CAP>
+impl<'a, L: IsKnownComponentValueList<'a>> std::fmt::Debug for KnownDeclarationValueList<'a, L>
+where
+    KnownComponentValueList<'a, L>: std::fmt::Debug,
 {
-    pub(crate) const fn start_builder() -> builder::KnownDeclarationValueListBuilder<'a, L, CAP> {
-        builder::KnownDeclarationValueListBuilder::new()
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("KnownDeclarationValueList")
+            .field(&self.inner)
+            .finish()
     }
+}
 
+impl<
+        'a,
+        L: IsKnownComponentValueList<'a>,
+        const ARRAY_VEC_CAP: usize,
+        const LEAD_VEC_CAP: usize,
+    > Clone for KnownDeclarationValueList<'a, L>
+where
+    L::Collection: IsKnownCollection<
+        ComponentValue<'a>,
+        ArrayVecType = ArrayVec<ComponentValue<'a>, ARRAY_VEC_CAP>,
+        LeadVecType = LeadVec<ComponentValue<'a>, LEAD_VEC_CAP>,
+    >,
+{
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<
+        'a,
+        L: IsKnownComponentValueList<'a>,
+        const ARRAY_VEC_CAP: usize,
+        const LEAD_VEC_CAP: usize,
+    > Copy for KnownDeclarationValueList<'a, L>
+where
+    L::Collection: IsKnownCollection<
+        ComponentValue<'a>,
+        ArrayVecType = ArrayVec<ComponentValue<'a>, ARRAY_VEC_CAP>,
+        LeadVecType = LeadVec<ComponentValue<'a>, LEAD_VEC_CAP>,
+    >,
+{
+}
+
+impl<'a, L: IsKnownComponentValueList<'a>> KnownDeclarationValueList<'a, L> {
     pub const fn full(&self) -> crate::token::stream::CopyableTokenStream<'a> {
         self.inner.full()
     }
@@ -29,10 +70,14 @@ impl<'a, L: IsKnownParsedValueList<ComponentValue<'a>, CAP>, const CAP: usize>
         self.inner.full_as_str()
     }
 
-    pub(crate) const fn as_known_parsed_value_list(
-        &self,
-    ) -> &KnownParsedValueList<'a, L, ComponentValue<'a>, CAP> {
+    pub(crate) const fn as_known_component_value_list(&self) -> &KnownComponentValueList<'a, L> {
         &self.inner
+    }
+}
+
+impl<'a, L: IsKnownComponentValueListWithConstEmpty<'a>> KnownDeclarationValueList<'a, L> {
+    pub(crate) const fn start_builder() -> builder::KnownDeclarationValueListBuilder<'a, L> {
+        builder::KnownDeclarationValueListBuilder::new()
     }
 }
 
@@ -40,9 +85,11 @@ pub(crate) mod builder {
     use crate::{
         collections::{
             array_vec::ArrayVec,
-            parsed_value_list::{
-                IsKnownParsedValueList, KnownParsedValueList, KnownParsedValueListBuilder,
+            component_value_list::{
+                builder::KnownComponentValueListBuilder, IsKnownComponentValueList,
+                IsKnownComponentValueListWithConstEmpty,
             },
+            parsed_value_list::{KnownParsedValueList, KnownParsedValueListBuilder},
             HasConstDummyValue,
         },
         parse::{
@@ -134,20 +181,26 @@ pub(crate) mod builder {
     }
 
     impl<'a> ValueList<'a> {
-        /// ret.0 means the value that is not one of the last two.
+        /// ret.0 means the value that is not one of the last two non-whitespace.
         const fn with_push(
             self,
             v: ValueAndRemaining<'a>,
         ) -> (Option<ValueAndRemaining<'a>>, Self) {
             match self {
-                ValueList::Empty => (
-                    None,
-                    Self::NotEmpty {
-                        first: v,
-                        last_3: ArrayVec::EMPTY,
-                        real_len: 1,
-                    },
-                ),
+                ValueList::Empty => {
+                    debug_assert!(
+                        !v.cv.is_whitespace(),
+                        "first component value in declaration value list can't be whitespace"
+                    );
+                    (
+                        None,
+                        Self::NotEmpty {
+                            first: v,
+                            last_3: ArrayVec::EMPTY,
+                            real_len: 1,
+                        },
+                    )
+                }
                 ValueList::NotEmpty {
                     first,
                     last_3,
@@ -335,17 +388,14 @@ pub(crate) mod builder {
 
     pub(crate) struct KnownDeclarationValueListBuilder<
         'a,
-        L: IsKnownParsedValueList<ComponentValue<'a>, CAP>,
-        const CAP: usize,
+        L: IsKnownComponentValueListWithConstEmpty<'a>,
     > {
         // the full list is list_builder + value_list.last_3
-        list_builder: KnownParsedValueListBuilder<'a, L, ComponentValue<'a>, CAP>,
+        list_builder: KnownComponentValueListBuilder<'a, L>,
         value_list: ValueList<'a>,
     }
 
-    impl<'a, L: IsKnownParsedValueList<ComponentValue<'a>, CAP>, const CAP: usize>
-        KnownDeclarationValueListBuilder<'a, L, CAP>
-    {
+    impl<'a, L: IsKnownComponentValueListWithConstEmpty<'a>> KnownDeclarationValueListBuilder<'a, L> {
         pub(crate) const fn with_push(
             self,
             tar: TokenAndRemaining<'a, ComponentValue<'a>>,
@@ -384,7 +434,7 @@ pub(crate) mod builder {
         pub(crate) const fn build(
             self,
             after_colon: CopyableTokenStream<'a>,
-        ) -> BuildOutput<'a, L, CAP> {
+        ) -> BuildOutput<'a, L> {
             // after values and !important
             let after_value_and_important = match self.value_list.last() {
                 Some(v) => v.remaining,
@@ -455,12 +505,8 @@ pub(crate) mod builder {
         }
     }
 
-    pub(crate) struct BuildOutput<
-        'a,
-        L: IsKnownParsedValueList<ComponentValue<'a>, CAP>,
-        const CAP: usize,
-    > {
-        pub(crate) value: KnownDeclarationValueList<'a, L, CAP>,
+    pub(crate) struct BuildOutput<'a, L: IsKnownComponentValueListWithConstEmpty<'a>> {
+        pub(crate) value: KnownDeclarationValueList<'a, L>,
         pub(crate) important: Option<Important<'a>>,
         pub(crate) value_and_important: CopyableTokenStream<'a>,
         pub(crate) after_value_and_important: CopyableTokenStream<'a>,
