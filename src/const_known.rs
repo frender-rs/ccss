@@ -103,8 +103,13 @@ macro_rules! define_known_variants {
 
 #[doc(hidden)]
 pub mod __private {
-    pub use ::syn_lite::{expand_if_else, parse_generics};
     pub use core::stringify;
+
+    #[macro_export]
+    macro_rules! __expand_if_else {
+        ([                 ] $if:tt {$($else:tt)*}) => {$($else)*};
+        ([$($predicate:tt)+] {$($if:tt)*} $else:tt) => {$($if)*};
+    }
 
     #[macro_export]
     macro_rules! __resolve_finish {
@@ -1157,7 +1162,7 @@ pub mod __private {
                 }
             }
 
-            $crate::const_known::__private::expand_if_else! { [$($sealed_mod)?]{
+            $crate::__expand_if_else! { [$($sealed_mod)?]{
                 mod $($sealed_mod)? {
                     #[allow(unused_imports)]
                     use super::*;
@@ -1262,7 +1267,7 @@ pub mod __private {
             { $VarName:ident ($VarType:ty) }
             [$($variant_name:ident)*]
         ) => {
-            $crate::const_known::__private::expand_if_else! { [$($sealed_mod)?]{
+            $crate::__expand_if_else! { [$($sealed_mod)?]{
                 impl<$($impl_generics)*> $($sealed_trait_path)? for $VarType {}
             }{}}
 
