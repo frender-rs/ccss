@@ -125,8 +125,8 @@ impl<'a> Number<'a> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DimensionToken<'a> {
-    number: Number<'a>,
-    unit: IdentSequence<'a>,
+    pub number: Number<'a>,
+    pub unit: IdentSequence<'a>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
