@@ -368,7 +368,7 @@ impl<'a> ComponentValueParseList<'a> {
     >(
         self,
     ) -> Result<
-        (KnownComponentValueList<'a, L>, Self),
+        KnownComponentValueList<'a, L>,
         (KnownComponentValueList<'a, L>, ListParseNotNestedError<'a>),
     >
     where
@@ -412,7 +412,10 @@ impl<'a> ComponentValueParseList<'a> {
                             }
                         }
                     } else {
-                        return Ok((builder.build(before_next), this));
+                        debug_assert!(
+                            matches!(this.inner, Ok(input) if input.tokens_and_remaining().is_empty())
+                        );
+                        return Ok(builder.build(before_next));
                     }
                 }
                 Err(err) => return Err((builder.build(before_next), err)),
