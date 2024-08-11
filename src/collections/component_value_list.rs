@@ -20,7 +20,7 @@ impl<'a, V: IsKnownComponentValueList<'a>> KnownComponentValueList<'a, V> {
         self.value_list.full_as_str()
     }
 
-    pub(crate) const fn as_known_parsed_value_list(
+    pub const fn as_known_parsed_value_list(
         &self,
     ) -> &KnownParsedValueList<'a, V::Collection, ComponentValue<'a>> {
         &self.value_list
