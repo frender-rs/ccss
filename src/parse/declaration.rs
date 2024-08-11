@@ -7,10 +7,11 @@ use crate::{
         component_value_list::{
             IsKnownComponentValueList, IsKnownComponentValueListWithConstEmpty,
         },
-        count::Count,
         declaration_value_list::{builder::BuildOutput, KnownDeclarationValueList},
-        known::IsKnownCollection,
+        known::{IsKnownCollection, IsKnownCollectionWithConstEmpty},
         lead_vec::LeadVec,
+        parsed_value_list::KnownParsedValueList,
+        HasConstDummyValue,
     },
     parse::component_value::{
         ComponentValueParseList, ListParseFullError, NextFull, TokenAndRemaining,
@@ -22,7 +23,7 @@ use crate::{
         },
         tokens::{
             Colon, DelimToken, IdentLikeToken, IdentToken, Semicolon, SimpleToken, Token,
-            TokenParseError, TokenParseResult,
+            TokenParseError,
         },
     },
 };
@@ -33,7 +34,6 @@ use super::component_value::{
     SemicolonAsStopToken,
 };
 
-#[derive(Debug, Clone, Copy)]
 pub struct Declaration<'a, L: IsKnownComponentValueList<'a> = CollectNothing> {
     full: CopyableTokenStream<'a>,
     name: IdentToken<'a>,
@@ -41,6 +41,38 @@ pub struct Declaration<'a, L: IsKnownComponentValueList<'a> = CollectNothing> {
     value_and_important: CopyableTokenStream<'a>,
     value: KnownDeclarationValueList<'a, L>,
     important: Option<Important<'a>>,
+}
+
+impl<'a, L: IsKnownComponentValueListWithConstEmpty<'a>> HasConstDummyValue for Declaration<'a, L> {
+    const DUMMY_VALUE: Self = Self {
+        full: TokenStream::new("a:").to_copyable(),
+        name: IdentToken::new_const("a"),
+        colon: Colon::DEFAULT,
+        value_and_important: CopyableTokenStream::EMPTY,
+        value: KnownDeclarationValueList::EMPTY,
+        important: None,
+    };
+}
+
+impl<'a, L: IsKnownComponentValueList<'a>> Copy for Declaration<'a, L> {}
+
+impl<'a, L: IsKnownComponentValueList<'a>> Clone for Declaration<'a, L> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<'a, L: IsKnownComponentValueList<'a>> std::fmt::Debug for Declaration<'a, L> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Declaration")
+            .field("full", &self.full)
+            .field("name", &self.name)
+            .field("colon", &self.colon)
+            .field("value_and_important", &self.value_and_important)
+            .field("value", &self.value)
+            .field("important", &self.important)
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -214,7 +246,7 @@ impl<'a> DeclarationParseErrorFull<'a, NestedFalse> {
 impl<'a, L: IsKnownComponentValueList<'a>> Declaration<'a, L> {
     pub const fn parse_list(input: TokenStream<'a>) -> DeclarationParseList<'a, L> {
         DeclarationParseList {
-            inner: input.try_process(),
+            inner: input.try_process_or_copy(),
             _list: std::marker::PhantomData,
         }
     }
@@ -463,7 +495,7 @@ const fn str_matches_important_ascii_case_insensitive(s: &str) -> bool {
 ///
 /// `nested` is false
 pub struct DeclarationParseList<'a, VL: IsKnownComponentValueList<'a>> {
-    inner: TokenParseResult<'a, TokenStreamProcess<'a>>,
+    inner: Result<TokenStreamProcess<'a>, (TokenParseError<'a>, TokenStream<'a>)>,
     _list: std::marker::PhantomData<VL>,
 }
 
@@ -480,80 +512,81 @@ where
         LeadVecType = LeadVec<ComponentValue<'a>, LEAD_VEC_CAP>,
     >,
 {
+    const fn try_consume_next(
+        mut input: TokenStreamProcess<'a>,
+    ) -> Result<(Option<Declaration<'a, VL>>, Self), DeclarationParseListError<'a>> {
+        loop {
+            match input.try_unwrap_one() {
+                Ok(tar) => match tar.token {
+                    Token::Whitespace(_) | Token::Simple(SimpleToken::Semicolon(_)) => {
+                        // Do nothing.
+                        match tar.remaining.try_process() {
+                            Ok(remaining) => input = remaining,
+                            Err(err) => return Err(DeclarationParseListError::Token(err)),
+                        };
+                    }
+                    Token::IdentLike(IdentLikeToken::Ident(name)) => {
+                        match Declaration::try_consume_after_name::<NestedFalse>(
+                            tar.with_token_const(name),
+                        ) {
+                            Ok((d, reason)) => {
+                                return Ok((
+                                    Some(d),
+                                    match reason {
+                                        ParseEndReasonFull::NextIsRightCurlyBracket(_, never) => {
+                                            match never {}
+                                        }
+                                        ParseEndReasonFull::NextIsStopToken(tar) => {
+                                            // discard the semicolon
+                                            Self {
+                                                inner: tar.remaining.try_process_or_copy(),
+                                                _list: std::marker::PhantomData,
+                                            }
+                                        }
+                                        ParseEndReasonFull::Eof => Self {
+                                            inner: Ok(TokenStreamProcess::EMPTY),
+                                            _list: std::marker::PhantomData,
+                                        },
+                                    },
+                                ));
+                            }
+                            Err(err) => return Err(err.into_parse_list_error_with_nested_false()),
+                        }
+                    }
+                    _ => {
+                        return Err(DeclarationParseListError::Declaration(
+                            DeclarationParseError::UnexpectedToken(UnexpectedTokenError {
+                                expected: ExpectedToken::Ident,
+                                unexpected_input: tar.into_input(),
+                            }),
+                        ));
+                    }
+                },
+                Err(empty) => {
+                    // EOF
+                    return Ok((
+                        None,
+                        Self {
+                            inner: Ok(empty),
+                            _list: std::marker::PhantomData,
+                        },
+                    ));
+                }
+            }
+        }
+    }
+
     pub const fn try_into_next(
         self,
     ) -> Result<(Option<Declaration<'a, VL>>, Self), DeclarationParseListError<'a>> {
         match self.inner {
-            Ok(mut input) => {
-                loop {
-                    match input.try_unwrap_one() {
-                        Ok(tar) => match tar.token {
-                            Token::Whitespace(_) | Token::Simple(SimpleToken::Semicolon(_)) => {
-                                // Do nothing.
-                                match tar.remaining.try_process() {
-                                    Ok(remaining) => input = remaining,
-                                    Err(err) => return Err(DeclarationParseListError::Token(err)),
-                                };
-                            }
-                            Token::IdentLike(IdentLikeToken::Ident(name)) => {
-                                match Declaration::try_consume_after_name::<NestedFalse>(
-                                    tar.with_token_const(name),
-                                ) {
-                                    Ok((d, reason)) => {
-                                        return Ok((
-                                            Some(d),
-                                            match reason {
-                                                ParseEndReasonFull::NextIsRightCurlyBracket(
-                                                    _,
-                                                    never,
-                                                ) => match never {},
-                                                ParseEndReasonFull::NextIsStopToken(tar) => {
-                                                    // discard the semicolon
-                                                    Self {
-                                                        inner: tar.remaining.try_process(),
-                                                        _list: std::marker::PhantomData,
-                                                    }
-                                                }
-                                                ParseEndReasonFull::Eof => Self {
-                                                    inner: Ok(TokenStreamProcess::EMPTY),
-                                                    _list: std::marker::PhantomData,
-                                                },
-                                            },
-                                        ));
-                                    }
-                                    Err(err) => {
-                                        return Err(err.into_parse_list_error_with_nested_false())
-                                    }
-                                }
-                            }
-                            _ => {
-                                return Err(DeclarationParseListError::Declaration(
-                                    DeclarationParseError::UnexpectedToken(UnexpectedTokenError {
-                                        expected: ExpectedToken::Ident,
-                                        unexpected_input: tar.into_input(),
-                                    }),
-                                ));
-                            }
-                        },
-                        Err(empty) => {
-                            // EOF
-                            return Ok((
-                                None,
-                                Self {
-                                    inner: Ok(empty),
-                                    _list: std::marker::PhantomData,
-                                },
-                            ));
-                        }
-                    }
-                }
-            }
-            Err(err) => Err(DeclarationParseListError::Token(err)),
+            Ok(input) => Self::try_consume_next(input),
+            Err((err, _)) => Err(DeclarationParseListError::Token(err)),
         }
     }
 
     const DUMMY: Self = Self {
-        inner: Err(TokenParseError::DUMMY),
+        inner: Err((TokenParseError::DUMMY, TokenStream::EMPTY)),
         _list: std::marker::PhantomData,
     };
 
@@ -578,6 +611,71 @@ where
                     _list: std::marker::PhantomData,
                 };
                 Err(err)
+            }
+        }
+    }
+
+    pub const fn try_collect_into_known<
+        DL: IsKnownCollectionWithConstEmpty<
+            Declaration<'a, VL>,
+            ArrayVecType = ArrayVec<Declaration<'a, VL>, DECLARATION_ARRAY_VEC_CAP>,
+            LeadVecType = LeadVec<Declaration<'a, VL>, DECLARATION_LEAD_VEC_CAP>,
+        >,
+        // TODO: find out a pattern where we can remove these explicit const generics
+        const DECLARATION_ARRAY_VEC_CAP: usize,
+        const DECLARATION_LEAD_VEC_CAP: usize,
+    >(
+        self,
+    ) -> Result<
+        KnownParsedValueList<'a, DL, Declaration<'a, VL>>,
+        (
+            KnownParsedValueList<'a, DL, Declaration<'a, VL>>,
+            DeclarationParseListError<'a>,
+        ),
+    > {
+        let mut input = match self.inner {
+            Ok(i) => i,
+            Err((err, _)) => {
+                return Err((
+                    KnownParsedValueList::EMPTY,
+                    DeclarationParseListError::Token(err),
+                ))
+            }
+        };
+
+        let mut builder = KnownParsedValueList::start_builder();
+
+        loop {
+            let before_next = input.tokens_and_remaining_to_copyable();
+
+            input = match Self::try_consume_next(input) {
+                Ok((v, this)) => {
+                    if let Some(v) = v {
+                        builder = builder.with_push(v, before_next);
+
+                        match this.inner {
+                            Ok(input) => input,
+                            Err((err, this)) => {
+                                return Err((
+                                    builder.build(this.to_copyable()),
+                                    DeclarationParseListError::Token(err),
+                                ))
+                            }
+                        }
+                    } else {
+                        let input = match this.inner {
+                            Ok(input) if input.tokens_and_remaining().is_empty() => input,
+                            _ => {
+                                panic!(
+                                    "unexpected tokens after parsing declaration list that is not nested"
+                                );
+                            }
+                        };
+                        let res = builder.build(input.tokens_and_remaining_to_copyable());
+                        return Ok(res);
+                    }
+                }
+                Err(err) => return Err((builder.build(before_next), err)),
             }
         }
     }

@@ -1,6 +1,6 @@
 pub use buffered_token_stream::{BufferedToken, BufferedTokenStream};
 
-use super::tokens::{Token, TokenParseOutput, TokenParseResult};
+use super::tokens::{Token, TokenParseError, TokenParseOutput, TokenParseResult};
 use crate::input::Filtered;
 
 pub struct TokenStream<'a>(Filtered<'a>);
@@ -76,6 +76,15 @@ impl<'a> TokenStream<'a> {
 
     pub const fn try_process(self) -> TokenParseResult<'a, TokenStreamProcess<'a>> {
         self.try_buffer_n::<1>()
+    }
+
+    pub(crate) const fn try_process_or_copy(
+        self,
+    ) -> Result<TokenStreamProcess<'a>, (TokenParseError<'a>, Self)> {
+        match self.copy().try_process() {
+            Ok(v) => Ok(v),
+            Err(err) => Err((err, self)),
+        }
     }
 
     pub(crate) const fn before(&self, other: &TokenStream<'a>) -> TokenStream<'a> {

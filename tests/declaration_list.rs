@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use ccss::{
-    collections::array_vec::ArrayVec,
+    collections::{array_vec::ArrayVec, parsed_value_list::KnownParsedValueList},
     parse::{
         component_value::ComponentValue,
         declaration::{Declaration, DeclarationParseListError},
@@ -42,7 +42,8 @@ fn test_all() {
         } else {
             let d = res.unwrap();
             let d = d
-                .into_iter()
+                .as_slice()
+                .iter()
                 .map(|d| util::declaration::Declaration {
                     name: d.name_as_str().into(),
                     value: {
@@ -67,10 +68,18 @@ fn test_all() {
     }
 }
 
-type List<'a> = ArrayVec<ComponentValue<'a>, 10>;
+type ComponentValueList<'a> = ArrayVec<ComponentValue<'a>, 10>;
+type DeclarationList<'a> = ArrayVec<Declaration<'a, ComponentValueList<'a>>, 10>;
 
-fn parse_one(input: &str) -> Result<Vec<Declaration<List>>, DeclarationParseListError> {
-    Declaration::parse_list_from_str(input)
-        .into_iter()
-        .collect()
+const fn parse_one(
+    input: &str,
+) -> Result<
+    KnownParsedValueList<DeclarationList, Declaration<ComponentValueList>>,
+    DeclarationParseListError,
+> {
+    match Declaration::parse_list_from_str(input).try_collect_into_known::<DeclarationList, 10, 0>()
+    {
+        Ok(res) => Ok(res),
+        Err((_, err)) => Err(err),
+    }
 }

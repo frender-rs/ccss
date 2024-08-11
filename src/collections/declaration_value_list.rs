@@ -1,12 +1,5 @@
-use crate::{parse::component_value::ComponentValue, token::stream::CopyableTokenStream};
-
-use super::{
-    array_vec::ArrayVec,
-    component_value_list::{
-        IsKnownComponentValueList, IsKnownComponentValueListWithConstEmpty, KnownComponentValueList,
-    },
-    known::IsKnownCollection,
-    lead_vec::LeadVec,
+use super::component_value_list::{
+    IsKnownComponentValueList, IsKnownComponentValueListWithConstEmpty, KnownComponentValueList,
 };
 
 /// A list of [`ComponentValue`] with the following constraints:
@@ -46,6 +39,14 @@ impl<'a, L: IsKnownComponentValueList<'a>> KnownDeclarationValueList<'a, L> {
     }
 }
 
+impl<'a, L: IsKnownComponentValueListWithConstEmpty<'a>> KnownDeclarationValueList<'a, L> {
+    pub(crate) const EMPTY: Self = {
+        Self {
+            inner: KnownComponentValueList::EMPTY,
+        }
+    };
+}
+
 impl<'a, L: IsKnownComponentValueList<'a>> KnownDeclarationValueList<'a, L> {
     pub(crate) const fn start_builder() -> builder::KnownDeclarationValueListBuilder<'a, L> {
         builder::KnownDeclarationValueListBuilder::new()
@@ -62,7 +63,6 @@ pub(crate) mod builder {
             },
             known::IsKnownCollection,
             lead_vec::LeadVec,
-            parsed_value_list::{KnownParsedValueList, KnownParsedValueListBuilder},
             HasConstDummyValue,
         },
         parse::{

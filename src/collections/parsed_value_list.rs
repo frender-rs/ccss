@@ -60,6 +60,17 @@ impl<'a, L: IsKnownCollection<T>, T: Copy> KnownParsedValueList<'a, L, T> {
     }
 }
 
+/// Only this variant has all parsed values
+impl<'a, T: Copy, const CAP: usize> KnownParsedValueList<'a, ArrayVec<T, CAP>, T> {
+    pub const fn as_array_vec(&self) -> &ArrayVec<T, CAP> {
+        debug_assert!(self.unparsed.to_str().is_empty());
+        self.parsed.as_variant()
+    }
+    pub const fn as_slice(&self) -> &[T] {
+        self.as_array_vec().as_slice()
+    }
+}
+
 pub(crate) enum KnownParsedValueListBuilder<'a, L: IsKnownCollection<T>, T: Copy> {
     Empty,
     AllParsed {
