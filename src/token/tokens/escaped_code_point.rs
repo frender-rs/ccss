@@ -21,7 +21,7 @@ impl EscapedCodePoint {
     /// https://drafts.csswg.org/css-syntax-3/#check-if-two-code-points-are-a-valid-escape
     ///
     /// https://drafts.csswg.org/css-syntax-3/#consume-escaped-code-point
-    pub const fn consume(stream: Filtered) -> Result<(Option<Self>, Filtered), Eof> {
+    pub(crate) const fn consume(stream: Filtered) -> Result<(Option<Self>, Filtered), Eof> {
         let (fc, mut this) = match stream.next() {
             Some(v) => v,
             None => return Err(Eof),
