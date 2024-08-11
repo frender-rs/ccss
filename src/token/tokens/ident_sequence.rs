@@ -86,3 +86,14 @@ impl<'a> IdentSequence<'a> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::input::Filtered;
+
+    use super::IdentSequence;
+
+    const _: () = {
+        assert!(IdentSequence::would_start(&Filtered::new("\\-")));
+    };
+}

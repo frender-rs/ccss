@@ -81,10 +81,20 @@ impl<'a> HasConstDummyValue for Token<'a> {
     const DUMMY_VALUE: Self = Token::Whitespace(WhitespaceToken::ONE_SPACE);
 }
 
+/// The input stream starts with a `U+005C REVERSE SOLIDUS (\)`
+/// but it doesn't start with a valid escape.
+#[derive(Debug)]
+pub struct UnexpectedReverseSolidusError<'a> {
+    /// the stream that starts with a `U+005C REVERSE SOLIDUS (\)`
+    #[allow(unused)]
+    stream: Filtered<'a>,
+}
+
 #[derive(Debug)]
 pub enum TokenParseError<'a> {
     StringToken(StringTokenParseError<'a>),
     Url(UrlParseError<'a>),
+    UnexpectedReverseSolidus(UnexpectedReverseSolidusError<'a>),
 }
 
 impl<'a> TokenParseError<'a> {
@@ -228,8 +238,21 @@ impl<'a> Token<'a> {
                 }
             }
             '\\' => {
-                // TODO: this is a parse error. Return a <delim-token> with its value set to the current input code point
-                ShouldProcessDelimToken
+                if EscapedCodePoint::chars_would_start(before_delim.first_n_code_points()) {
+                    match IdentLikeToken::consume(before_delim) {
+                        Ok((Some(ident), stream)) => return out(Self::IdentLike(ident), stream),
+                        Ok((None, _)) => {
+                            unreachable!()
+                        }
+                        Err(err) => return Err(TokenParseError::Url(err)),
+                    }
+                } else {
+                    return Err(TokenParseError::UnexpectedReverseSolidus(
+                        UnexpectedReverseSolidusError {
+                            stream: before_delim,
+                        },
+                    ));
+                }
             }
             c if is_ident_code_point(c) => match IdentLikeToken::consume(before_delim) {
                 Ok((Some(ident), stream)) => return out(Self::IdentLike(ident), stream),
@@ -335,4 +358,53 @@ pub enum SimpleBlockKind {
     CurlyBracket,
     SquareBracket,
     Parenthesis,
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        input::Filtered,
+        token::tokens::{IdentLikeToken, IdentToken, TokenParseOutput},
+    };
+
+    use super::Token;
+
+    const _: () = {
+        match Token::consume(Filtered::new("\\-")) {
+            Ok(out) => match out {
+                super::TokenParseOutput::TokenAndRemaining(t, remaining) => {
+                    remaining.assert_empty();
+                    match t {
+                        Token::IdentLike(IdentLikeToken::Ident(ident)) => {
+                            match ident.to_str().as_bytes() {
+                                b"\\-" => {}
+                                _ => panic!(),
+                            }
+                        }
+                        _ => {
+                            panic!()
+                        }
+                    }
+                }
+                super::TokenParseOutput::Eof => panic!(),
+            },
+            Err(_) => panic!(),
+        }
+    };
+
+    #[test]
+    fn escape_ident() {
+        let out = Token::consume(Filtered::new("\\-")).unwrap();
+
+        let TokenParseOutput::TokenAndRemaining(token, remaining) = out else {
+            panic!("eof")
+        };
+
+        remaining.assert_empty_or_report();
+
+        assert_eq!(
+            token,
+            Token::IdentLike(IdentLikeToken::Ident(IdentToken::new_const("\\-")))
+        );
+    }
 }

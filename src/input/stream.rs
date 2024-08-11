@@ -82,6 +82,11 @@ impl<'a> Filtered<'a> {
     pub(crate) const fn assert_empty(&self) {
         assert!(self.0.as_str().is_empty(), "unexpected remaining tokens")
     }
+
+    pub(crate) fn assert_empty_or_report(&self) {
+        let s = self.0.as_str();
+        assert!(s.is_empty(), "unexpected remaining tokens: {s:?}")
+    }
 }
 
 impl Filtered<'_> {
