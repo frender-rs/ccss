@@ -24,7 +24,7 @@ impl<T, const CAP: usize> ArrayVec<T, CAP> {
     }
 
     /// An `array` is returned.
-    /// `array[self.len..]` is filed with [T::DUMMY_VALUE](HasConstDummyValue::DUMMY_VALUE).
+    /// `array[self.len..]` is filled with [T::DUMMY_VALUE](HasConstDummyValue::DUMMY_VALUE).
     pub const fn copy_array_padding_dummy(self) -> [T; CAP]
     where
         T: Copy,
