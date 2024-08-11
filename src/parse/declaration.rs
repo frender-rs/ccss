@@ -625,7 +625,7 @@ where
         const DECLARATION_ARRAY_VEC_CAP: usize,
         const DECLARATION_LEAD_VEC_CAP: usize,
     >(
-        self,
+        mut self,
     ) -> Result<
         KnownParsedValueList<'a, DL, Declaration<'a, VL>>,
         (
@@ -633,35 +633,20 @@ where
             DeclarationParseListError<'a>,
         ),
     > {
-        let mut input = match self.inner {
-            Ok(i) => i,
-            Err((err, _)) => {
-                return Err((
-                    KnownParsedValueList::EMPTY,
-                    DeclarationParseListError::Token(err),
-                ))
-            }
-        };
-
         let mut builder = KnownParsedValueList::start_builder();
 
         loop {
-            let before_next = input.tokens_and_remaining_to_copyable();
+            let before_next = match &self.inner {
+                Ok(input) => input.tokens_and_remaining_to_copyable(),
+                Err((_, input)) => input.to_copyable(),
+            };
 
-            input = match Self::try_consume_next(input) {
+            self = match self.try_into_next() {
                 Ok((v, this)) => {
                     if let Some(v) = v {
                         builder = builder.with_push(v, before_next);
 
-                        match this.inner {
-                            Ok(input) => input,
-                            Err((err, this)) => {
-                                return Err((
-                                    builder.build(this.to_copyable()),
-                                    DeclarationParseListError::Token(err),
-                                ))
-                            }
-                        }
+                        this
                     } else {
                         let input = match this.inner {
                             Ok(input) if input.tokens_and_remaining().is_empty() => input,
