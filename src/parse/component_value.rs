@@ -243,6 +243,10 @@ impl<'a> ComponentValue<'a> {
         }
     }
 
+    pub const fn parse_list_from_str(input: &'a str) -> ComponentValueParseList {
+        Self::parse_list(TokenStream::new(input))
+    }
+
     pub(crate) const fn is_whitespace(&self) -> bool {
         match self {
             ComponentValue::PreservedTokens(t) => t.is_whitespace(),
