@@ -396,6 +396,14 @@ pub mod component_value {
                 ComponentValue::Typed(a, b) => ComponentValue::Typed(f(a), f(b)),
             }
         }
+
+        /// Returns `true` if the component value is [`Whitespace`].
+        ///
+        /// [`Whitespace`]: ComponentValue::Whitespace
+        #[must_use]
+        pub(crate) const fn is_whitespace(&self) -> bool {
+            matches!(self, Self::Whitespace(..))
+        }
     }
 
     impl<'a> ComponentValue<&'a str> {
@@ -505,6 +513,33 @@ pub mod declaration {
         pub name: S,
         pub value: Vec<ComponentValue<S>>,
         pub important: bool,
+    }
+
+    pub type Parsed<'a, const CAP: usize> = ccss::parse::declaration::Declaration<
+        'a,
+        ccss::collections::array_vec::ArrayVec<
+            ccss::parse::component_value::ComponentValue<'a>,
+            CAP,
+        >,
+    >;
+
+    impl<S> Declaration<S> {
+        pub(crate) fn from_parsed<'a, const CAP: usize>(parsed: Parsed<'a, CAP>) -> Self
+        where
+            S: From<&'a str>,
+        {
+            Self {
+                name: parsed.name_as_str().into(),
+                value: {
+                    parsed
+                        .value_as_slice()
+                        .iter()
+                        .map(|v| ComponentValue::from_parsed(*v).map_str(S::from))
+                        .collect()
+                },
+                important: parsed.is_important(),
+            }
+        }
     }
 
     impl<S> From<DeclarationRaw<S>> for Declaration<S> {
