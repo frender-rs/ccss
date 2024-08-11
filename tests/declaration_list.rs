@@ -6,7 +6,6 @@ use ccss::{
         component_value::ComponentValue,
         declaration::{Declaration, DeclarationParseListError},
     },
-    token::stream::TokenStream,
 };
 use util::{declaration_rule_list::DeclarationRule, error::MaybeError, TestSuite, TestSuites};
 
@@ -47,18 +46,14 @@ fn test_all() {
                 .map(|d| util::declaration::Declaration {
                     name: d.name_as_str().into(),
                     value: {
-                        // TODO: prevent re-parse
-                        let s = d.value_as_str();
+                        let s = d.value_as_slice();
 
-                        ComponentValue::parse_list(TokenStream::new(s))
-                            .map(|res| {
-                                res.map(|v| {
-                                    util::component_value::ComponentValue::from_parsed(v)
-                                        .map_str(Cow::Borrowed)
-                                })
+                        s.iter()
+                            .map(|v| {
+                                util::component_value::ComponentValue::from_parsed(*v)
+                                    .map_str(Cow::Borrowed)
                             })
-                            .collect::<Result<_, _>>()
-                            .unwrap()
+                            .collect()
                     },
                     important: d.is_important(),
                 })
@@ -72,10 +67,9 @@ fn test_all() {
     }
 }
 
-const CAP: usize = 10;
-type List<'a> = ArrayVec<ComponentValue<'a>, CAP>;
+type List<'a> = ArrayVec<ComponentValue<'a>, 10>;
 
-fn parse_one(input: &str) -> Result<Vec<Declaration<List, CAP>>, DeclarationParseListError> {
+fn parse_one(input: &str) -> Result<Vec<Declaration<List>>, DeclarationParseListError> {
     Declaration::parse_list_from_str(input)
         .into_iter()
         .collect()

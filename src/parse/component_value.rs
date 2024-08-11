@@ -1,7 +1,12 @@
 use crate::{
     collections::{
-        count::Count, known::IsKnownCollectionWithConstEmpty,
-        parsed_value_list::KnownParsedValueList, HasConstDummyValue,
+        array_vec::ArrayVec,
+        component_value_list::{IsKnownComponentValueListWithConstEmpty, KnownComponentValueList},
+        count::Count,
+        known::{IsArrayVec, IsKnownCollection, IsKnownCollectionWithConstEmpty},
+        lead_vec::LeadVec,
+        parsed_value_list::KnownParsedValueList,
+        HasConstDummyValue,
     },
     token::{
         stream::{
@@ -293,8 +298,6 @@ macro_rules! match_no_stop_token {
     };
 }
 
-pub type KnownComponentValueList<'a, L> = KnownParsedValueList<'a, L, ComponentValue<'a>>;
-
 impl<'a> ComponentValueParseList<'a> {
     /// Returns `Ok(None, EMPTY)` is self is empty.
     ///
@@ -356,14 +359,23 @@ impl<'a> ComponentValueParseList<'a> {
     /// stop_token is unset.
     /// nested is false.
     pub const fn try_collect_into_known<
-        L: IsKnownCollectionWithConstEmpty<ComponentValue<'a>>,
-        const CAP: usize,
+        L: IsKnownComponentValueListWithConstEmpty<'a>,
+        // TODO: find out a pattern where we can remove these explicit const generics
+        const ARRAY_VEC_CAP: usize,
+        const LEAD_VEC_CAP: usize,
     >(
         self,
     ) -> Result<
         (KnownComponentValueList<'a, L>, Self),
         (KnownComponentValueList<'a, L>, ListParseNotNestedError<'a>),
-    > {
+    >
+    where
+        L::Collection: IsKnownCollection<
+            ComponentValue<'a>,
+            ArrayVecType = ArrayVec<ComponentValue<'a>, ARRAY_VEC_CAP>,
+            LeadVecType = LeadVec<ComponentValue<'a>, LEAD_VEC_CAP>,
+        >,
+    {
         let mut input = match self.inner {
             Ok(v) => v,
             Err(err) => {
@@ -376,7 +388,7 @@ impl<'a> ComponentValueParseList<'a> {
             }
         };
 
-        let mut builder = KnownParsedValueList::<L, ComponentValue, CAP>::start_builder();
+        let mut builder = KnownComponentValueList::<L>::start_builder();
 
         loop {
             let before_next = input.tokens_and_remaining_to_copyable();

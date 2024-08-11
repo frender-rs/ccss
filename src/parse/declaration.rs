@@ -9,6 +9,8 @@ use crate::{
         },
         count::Count,
         declaration_value_list::{builder::BuildOutput, KnownDeclarationValueList},
+        known::IsKnownCollection,
+        lead_vec::LeadVec,
     },
     parse::component_value::{
         ComponentValueParseList, ListParseFullError, NextFull, TokenAndRemaining,
@@ -209,19 +211,32 @@ impl<'a> DeclarationParseErrorFull<'a, NestedFalse> {
     }
 }
 
-impl<'a> Declaration<'a> {
-    pub const fn parse_list(input: TokenStream<'a>) -> DeclarationParseList<'a> {
+impl<'a, L: IsKnownComponentValueList<'a>> Declaration<'a, L> {
+    pub const fn parse_list(input: TokenStream<'a>) -> DeclarationParseList<'a, L> {
         DeclarationParseList {
             inner: input.try_process(),
+            _list: std::marker::PhantomData,
         }
     }
 
-    pub const fn parse_list_from_str(input: &'a str) -> DeclarationParseList<'a> {
+    pub const fn parse_list_from_str(input: &'a str) -> DeclarationParseList<'a, L> {
         Self::parse_list(TokenStream::new(input))
     }
 }
 
-impl<'a, L: IsKnownComponentValueList<'a>> Declaration<'a, L> {
+impl<
+        'a,
+        L: IsKnownComponentValueListWithConstEmpty<'a>,
+        const ARRAY_VEC_CAP: usize,
+        const LEAD_VEC_CAP: usize,
+    > Declaration<'a, L>
+where
+    L::Collection: IsKnownCollection<
+        ComponentValue<'a>,
+        ArrayVecType = ArrayVec<ComponentValue<'a>, ARRAY_VEC_CAP>,
+        LeadVecType = LeadVec<ComponentValue<'a>, LEAD_VEC_CAP>,
+    >,
+{
     /// nested is false
     pub(crate) const fn try_consume_next(
         input: TokenStreamProcess<'a>,
@@ -361,6 +376,7 @@ impl<'a, L: IsKnownComponentValueList<'a>> Declaration<'a, L> {
                         important,
                         value_and_important,
                         after_value_and_important,
+                        after_value_and_important_and_trailing_whitespace: _,
                     } = values_builder.build(after_colon);
 
                     return Ok((
@@ -382,7 +398,9 @@ impl<'a, L: IsKnownComponentValueList<'a>> Declaration<'a, L> {
             }
         }
     }
+}
 
+impl<'a, L: IsKnownComponentValueList<'a>> Declaration<'a, L> {
     pub fn full_as_str(&self) -> &'a str {
         self.full.to_str()
     }
@@ -415,9 +433,10 @@ impl<'a, L: IsKnownComponentValueList<'a>> Declaration<'a, L> {
 impl<'a, const CAP: usize> Declaration<'a, ArrayVec<ComponentValue<'a>, CAP>> {
     pub const fn value_as_slice(&self) -> &[ComponentValue<'a>] {
         self.value
+            .as_known_component_value_list()
             .as_known_parsed_value_list()
             .parsed()
-            .as_collection()
+            .as_variant()
             .as_slice()
     }
 }
@@ -443,14 +462,27 @@ const fn str_matches_important_ascii_case_insensitive(s: &str) -> bool {
 /// excluding at-rules.
 ///
 /// `nested` is false
-pub struct DeclarationParseList<'a> {
+pub struct DeclarationParseList<'a, VL: IsKnownComponentValueList<'a>> {
     inner: TokenParseResult<'a, TokenStreamProcess<'a>>,
+    _list: std::marker::PhantomData<VL>,
 }
 
-impl<'a> DeclarationParseList<'a> {
-    pub const fn try_into_next<L: IsKnownComponentValueList<'a>>(
+impl<
+        'a,
+        VL: IsKnownComponentValueListWithConstEmpty<'a>,
+        const ARRAY_VEC_CAP: usize,
+        const LEAD_VEC_CAP: usize,
+    > DeclarationParseList<'a, VL>
+where
+    VL::Collection: IsKnownCollection<
+        ComponentValue<'a>,
+        ArrayVecType = ArrayVec<ComponentValue<'a>, ARRAY_VEC_CAP>,
+        LeadVecType = LeadVec<ComponentValue<'a>, LEAD_VEC_CAP>,
+    >,
+{
+    pub const fn try_into_next(
         self,
-    ) -> Result<(Option<Declaration<'a, L>>, Self), DeclarationParseListError<'a>> {
+    ) -> Result<(Option<Declaration<'a, VL>>, Self), DeclarationParseListError<'a>> {
         match self.inner {
             Ok(mut input) => {
                 loop {
@@ -479,10 +511,12 @@ impl<'a> DeclarationParseList<'a> {
                                                     // discard the semicolon
                                                     Self {
                                                         inner: tar.remaining.try_process(),
+                                                        _list: std::marker::PhantomData,
                                                     }
                                                 }
                                                 ParseEndReasonFull::Eof => Self {
                                                     inner: Ok(TokenStreamProcess::EMPTY),
+                                                    _list: std::marker::PhantomData,
                                                 },
                                             },
                                         ));
@@ -503,7 +537,13 @@ impl<'a> DeclarationParseList<'a> {
                         },
                         Err(empty) => {
                             // EOF
-                            return Ok((None, Self { inner: Ok(empty) }));
+                            return Ok((
+                                None,
+                                Self {
+                                    inner: Ok(empty),
+                                    _list: std::marker::PhantomData,
+                                },
+                            ));
                         }
                     }
                 }
@@ -512,19 +552,20 @@ impl<'a> DeclarationParseList<'a> {
         }
     }
 
+    const DUMMY: Self = Self {
+        inner: Err(TokenParseError::DUMMY),
+        _list: std::marker::PhantomData,
+    };
+
     /// After the first `Err`:
     /// - further calling [`Iterator::next`] would emit `Ok(None)`.
     /// - further calling [`DeclarationParseList::try_next`] would emit `Ok((None, EMPTY))`.
     ///
     /// A const version of this method is [`Self::try_into_next`].
-    pub fn try_next<L: IsKnownComponentValueList<'a>>(
+    pub fn try_next(
         &mut self,
-    ) -> Result<Option<Declaration<'a, L>>, DeclarationParseListError<'a>> {
-        const DUMMY: DeclarationParseList = DeclarationParseList {
-            inner: Err(TokenParseError::DUMMY),
-        };
-
-        let this = std::mem::replace(self, DUMMY);
+    ) -> Result<Option<Declaration<'a, VL>>, DeclarationParseListError<'a>> {
+        let this = std::mem::replace(self, Self::DUMMY);
 
         match this.try_into_next() {
             Ok((v, this)) => {
@@ -534,18 +575,10 @@ impl<'a> DeclarationParseList<'a> {
             Err(err) => {
                 *self = Self {
                     inner: Ok(TokenStreamProcess::EMPTY),
+                    _list: std::marker::PhantomData,
                 };
                 Err(err)
             }
-        }
-    }
-
-    pub const fn into_iter<L: IsKnownComponentValueList<'a>>(
-        self,
-    ) -> DeclarationParseListIntoIter<'a, L> {
-        DeclarationParseListIntoIter {
-            inner: self,
-            _phantom: std::marker::PhantomData,
         }
     }
 }
@@ -564,36 +597,40 @@ pub enum DeclarationParseError<'a> {
     UnexpectedToken(UnexpectedTokenError<'a>),
 }
 
-pub struct DeclarationParseListIntoIter<'a, L: IsKnownComponentValueList<'a>> {
-    inner: DeclarationParseList<'a>,
-    _phantom: std::marker::PhantomData<L>,
-}
-
-impl<'a, L: IsKnownComponentValueList<'a>> DeclarationParseListIntoIter<'a, L> {
-    pub const fn try_into_next(
-        self,
-    ) -> Result<(Option<Declaration<'a, L>>, Self), DeclarationParseListError<'a>> {
-        match self.inner.try_into_next() {
-            Ok((v, this)) => Ok((v, this.into_iter())),
-            Err(err) => Err(err),
-        }
-    }
-    pub fn try_next(
-        &mut self,
-    ) -> Result<Option<Declaration<'a, L>>, DeclarationParseListError<'a>> {
-        self.inner.try_next()
-    }
-}
-
 /// After the first `Some(Err)`:
 /// - further calling [`Iterator::next`] would emit `None`.
 /// - further calling [`DeclarationParseList::try_next`] would emit `Ok((None, EMPTY))`.
-impl<'a, L: IsKnownComponentValueList<'a>> Iterator for DeclarationParseListIntoIter<'a, L> {
-    type Item = Result<Declaration<'a, L>, DeclarationParseListError<'a>>;
+impl<
+        'a,
+        VL: IsKnownComponentValueListWithConstEmpty<'a>,
+        const ARRAY_VEC_CAP: usize,
+        const LEAD_VEC_CAP: usize,
+    > Iterator for DeclarationParseList<'a, VL>
+where
+    VL::Collection: IsKnownCollection<
+        ComponentValue<'a>,
+        ArrayVecType = ArrayVec<ComponentValue<'a>, ARRAY_VEC_CAP>,
+        LeadVecType = LeadVec<ComponentValue<'a>, LEAD_VEC_CAP>,
+    >,
+{
+    type Item = Result<Declaration<'a, VL>, DeclarationParseListError<'a>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.try_next().transpose()
     }
 }
 
-impl<'a, L: IsKnownComponentValueList<'a>> FusedIterator for DeclarationParseListIntoIter<'a, L> {}
+impl<
+        'a,
+        VL: IsKnownComponentValueListWithConstEmpty<'a>,
+        const ARRAY_VEC_CAP: usize,
+        const LEAD_VEC_CAP: usize,
+    > FusedIterator for DeclarationParseList<'a, VL>
+where
+    VL::Collection: IsKnownCollection<
+        ComponentValue<'a>,
+        ArrayVecType = ArrayVec<ComponentValue<'a>, ARRAY_VEC_CAP>,
+        LeadVecType = LeadVec<ComponentValue<'a>, LEAD_VEC_CAP>,
+    >,
+{
+}

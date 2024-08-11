@@ -17,48 +17,19 @@ pub struct KnownDeclarationValueList<'a, L: IsKnownComponentValueList<'a>> {
     inner: KnownComponentValueList<'a, L>,
 }
 
-impl<'a, L: IsKnownComponentValueList<'a>> std::fmt::Debug for KnownDeclarationValueList<'a, L>
-where
-    KnownComponentValueList<'a, L>: std::fmt::Debug,
-{
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("KnownDeclarationValueList")
-            .field(&self.inner)
-            .finish()
-    }
-}
-
-impl<
-        'a,
-        L: IsKnownComponentValueList<'a>,
-        const ARRAY_VEC_CAP: usize,
-        const LEAD_VEC_CAP: usize,
-    > Clone for KnownDeclarationValueList<'a, L>
-where
-    L::Collection: IsKnownCollection<
-        ComponentValue<'a>,
-        ArrayVecType = ArrayVec<ComponentValue<'a>, ARRAY_VEC_CAP>,
-        LeadVecType = LeadVec<ComponentValue<'a>, LEAD_VEC_CAP>,
-    >,
-{
+impl<'a, L: IsKnownComponentValueList<'a>> Copy for KnownDeclarationValueList<'a, L> {}
+impl<'a, L: IsKnownComponentValueList<'a>> Clone for KnownDeclarationValueList<'a, L> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<
-        'a,
-        L: IsKnownComponentValueList<'a>,
-        const ARRAY_VEC_CAP: usize,
-        const LEAD_VEC_CAP: usize,
-    > Copy for KnownDeclarationValueList<'a, L>
-where
-    L::Collection: IsKnownCollection<
-        ComponentValue<'a>,
-        ArrayVecType = ArrayVec<ComponentValue<'a>, ARRAY_VEC_CAP>,
-        LeadVecType = LeadVec<ComponentValue<'a>, LEAD_VEC_CAP>,
-    >,
-{
+impl<'a, L: IsKnownComponentValueList<'a>> std::fmt::Debug for KnownDeclarationValueList<'a, L> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("KnownDeclarationValueList")
+            .field(&self.inner)
+            .finish()
+    }
 }
 
 impl<'a, L: IsKnownComponentValueList<'a>> KnownDeclarationValueList<'a, L> {
@@ -75,7 +46,7 @@ impl<'a, L: IsKnownComponentValueList<'a>> KnownDeclarationValueList<'a, L> {
     }
 }
 
-impl<'a, L: IsKnownComponentValueListWithConstEmpty<'a>> KnownDeclarationValueList<'a, L> {
+impl<'a, L: IsKnownComponentValueList<'a>> KnownDeclarationValueList<'a, L> {
     pub(crate) const fn start_builder() -> builder::KnownDeclarationValueListBuilder<'a, L> {
         builder::KnownDeclarationValueListBuilder::new()
     }
@@ -87,8 +58,10 @@ pub(crate) mod builder {
             array_vec::ArrayVec,
             component_value_list::{
                 builder::KnownComponentValueListBuilder, IsKnownComponentValueList,
-                IsKnownComponentValueListWithConstEmpty,
+                IsKnownComponentValueListWithConstEmpty, KnownComponentValueList,
             },
+            known::IsKnownCollection,
+            lead_vec::LeadVec,
             parsed_value_list::{KnownParsedValueList, KnownParsedValueListBuilder},
             HasConstDummyValue,
         },
@@ -98,7 +71,7 @@ pub(crate) mod builder {
         },
         token::{
             stream::{CopyableTokenStream, TokenStream},
-            tokens::Token,
+            tokens::{Token, WhitespaceToken},
         },
     };
 
@@ -106,11 +79,41 @@ pub(crate) mod builder {
 
     /// A copyable version of [`TokenAndRemaining<ComponentValue>`]
     #[derive(Clone, Copy)]
-    struct ValueAndRemaining<'a> {
-        cv: ComponentValue<'a>,
+    struct ValueAndRemaining<'a, V = ComponentValue<'a>> {
+        cv: V,
         remaining: CopyableTokenStream<'a>,
         // full == cv + remaining
         full: CopyableTokenStream<'a>,
+    }
+
+    impl<'a> ValueAndRemaining<'a> {
+        const fn try_into_whitespace(self) -> Option<ValueAndRemaining<'a, WhitespaceToken<'a>>> {
+            if let Some(whitespace) = self.cv.as_whitespace() {
+                Some(ValueAndRemaining {
+                    cv: *whitespace,
+                    remaining: self.remaining,
+                    full: self.full,
+                })
+            } else {
+                None
+            }
+        }
+    }
+
+    impl<'a> ValueAndRemaining<'a, WhitespaceToken<'a>> {
+        const fn into_whitespace_and_remaining(self) -> WhitespaceAndRemaining<'a> {
+            WhitespaceAndRemaining {
+                whitespace: self.cv,
+                whitespace_and_remaining: self.full,
+            }
+        }
+        const fn into_component_value_and_remaining(self) -> ValueAndRemaining<'a> {
+            ValueAndRemaining {
+                cv: value_of_whitespace(self.cv),
+                remaining: self.remaining,
+                full: self.full,
+            }
+        }
     }
 
     impl<'a> HasConstDummyValue for ValueAndRemaining<'a> {
@@ -121,11 +124,79 @@ pub(crate) mod builder {
         };
     }
 
+    #[derive(Clone, Copy)]
+    struct WhitespaceAndRemaining<'a> {
+        whitespace: WhitespaceToken<'a>,
+        whitespace_and_remaining: CopyableTokenStream<'a>,
+    }
+
+    #[derive(Clone, Copy)]
+    struct WhitespaceAndValueAndRemaining<'a> {
+        whitespace: Option<WhitespaceAndRemaining<'a>>,
+        value: ValueAndRemaining<'a>,
+    }
+
+    impl<'a> WhitespaceAndValueAndRemaining<'a> {
+        const fn into_tokens(self) -> (Option<ValueAndRemaining<'a>>, ValueAndRemaining<'a>) {
+            (
+                if let Some(w) = self.whitespace {
+                    Some(ValueAndRemaining {
+                        cv: value_of_whitespace(w.whitespace),
+                        remaining: self.value.full,
+                        full: w.whitespace_and_remaining,
+                    })
+                } else {
+                    None
+                },
+                self.value,
+            )
+        }
+
+        const fn push_to<
+            L: IsKnownComponentValueListWithConstEmpty<'a>,
+            const ARRAY_VEC_CAP: usize,
+            const LEAD_VEC_CAP: usize,
+        >(
+            self,
+            res: KnownComponentValueListBuilder<'a, L>,
+        ) -> KnownComponentValueListBuilder<'a, L>
+        where
+            L::Collection: IsKnownCollection<
+                ComponentValue<'a>,
+                ArrayVecType = ArrayVec<ComponentValue<'a>, ARRAY_VEC_CAP>,
+                LeadVecType = LeadVec<ComponentValue<'a>, LEAD_VEC_CAP>,
+            >,
+        {
+            let WhitespaceAndValueAndRemaining {
+                whitespace,
+                value: value_that_is_not_last_2,
+            } = self;
+
+            if let Some(w) = whitespace {
+                res.with_push(
+                    value_of_whitespace(w.whitespace),
+                    w.whitespace_and_remaining,
+                )
+            } else {
+                res
+            }
+            .with_push(value_that_is_not_last_2.cv, value_that_is_not_last_2.full)
+        }
+    }
+
+    impl<'a> HasConstDummyValue for WhitespaceAndValueAndRemaining<'a> {
+        const DUMMY_VALUE: Self = Self {
+            whitespace: None,
+            value: ValueAndRemaining::DUMMY_VALUE,
+        };
+    }
+
     enum ValueList<'a> {
         Empty,
         NotEmpty {
             first: ValueAndRemaining<'a>,
-            last_3: ArrayVec<ValueAndRemaining<'a>, 3>,
+            last_3: ArrayVec<WhitespaceAndValueAndRemaining<'a>, 3>,
+            last_whitespace: Option<ValueAndRemaining<'a, WhitespaceToken<'a>>>,
             real_len: usize,
         },
     }
@@ -180,15 +251,36 @@ pub(crate) mod builder {
         }
     }
 
+    const fn some_to_1<T>(v: &Option<T>) -> usize {
+        if v.is_some() {
+            1
+        } else {
+            0
+        }
+    }
+
+    const fn count_some<T>(vs: &[&Option<T>]) -> usize {
+        let mut res = 0;
+        let mut i = 0;
+        while i < vs.len() {
+            if vs[i].is_some() {
+                res += 1;
+            }
+            i += 1;
+        }
+
+        res
+    }
+
     impl<'a> ValueList<'a> {
-        /// ret.0 means the value that is not one of the last two non-whitespace.
+        /// ret.0 means the values that are not one of the last two non-whitespace.
         const fn with_push(
             self,
             v: ValueAndRemaining<'a>,
-        ) -> (Option<ValueAndRemaining<'a>>, Self) {
+        ) -> (Option<WhitespaceAndValueAndRemaining<'a>>, Self) {
             match self {
                 ValueList::Empty => {
-                    debug_assert!(
+                    assert!(
                         !v.cv.is_whitespace(),
                         "first component value in declaration value list can't be whitespace"
                     );
@@ -197,6 +289,7 @@ pub(crate) mod builder {
                         Self::NotEmpty {
                             first: v,
                             last_3: ArrayVec::EMPTY,
+                            last_whitespace: None,
                             real_len: 1,
                         },
                     )
@@ -204,15 +297,47 @@ pub(crate) mod builder {
                 ValueList::NotEmpty {
                     first,
                     last_3,
+                    last_whitespace,
                     real_len,
                 } => {
+                    let v = if let Some(whitespace) = last_whitespace {
+                        assert!(
+                            !v.cv.is_whitespace(),
+                            "unexpected adjacent whitespace tokens"
+                        );
+                        WhitespaceAndValueAndRemaining {
+                            whitespace: Some(whitespace.into_whitespace_and_remaining()),
+                            value: v,
+                        }
+                    } else {
+                        if let Some(whitespace) = v.try_into_whitespace() {
+                            return (
+                                None,
+                                Self::NotEmpty {
+                                    first,
+                                    last_3,
+                                    last_whitespace: Some(whitespace),
+                                    real_len: real_len + 1,
+                                },
+                            );
+                        } else {
+                            WhitespaceAndValueAndRemaining {
+                                whitespace: None,
+                                value: v,
+                            }
+                        }
+                    };
+
                     let (popped, last_3) = last_3.with_force_push(v);
 
                     let returned_val = match last_3.len() {
                         2 => {
                             debug_assert!(popped.is_none());
                             // now we can assure that `first` is not one of the last two.
-                            Some(first)
+                            Some(WhitespaceAndValueAndRemaining {
+                                whitespace: None,
+                                value: first,
+                            })
                         }
                         3 => {
                             debug_assert!(popped.is_none());
@@ -230,6 +355,8 @@ pub(crate) mod builder {
                         Self::NotEmpty {
                             first,
                             last_3,
+                            // we have processed the case where last_whitespace is_some
+                            last_whitespace: None,
                             real_len: real_len + 1,
                         },
                     )
@@ -243,10 +370,22 @@ pub(crate) mod builder {
                 ValueList::NotEmpty {
                     first,
                     ref last_3,
+                    last_whitespace,
                     real_len,
                 } => match last_3.as_slice() {
-                    [a, b, c] => {
-                        debug_assert!(real_len >= 4);
+                    [WhitespaceAndValueAndRemaining {
+                        whitespace: aw,
+                        value: a,
+                    }, WhitespaceAndValueAndRemaining {
+                        whitespace: bw,
+                        value: b,
+                    }, WhitespaceAndValueAndRemaining {
+                        whitespace: cw,
+                        value: c,
+                    }] => {
+                        debug_assert!(
+                            real_len >= 4 + count_some(&[aw, bw, cw]) + some_to_1(&last_whitespace)
+                        );
                         if let Some((bang, important)) = Important::is_bang_important(b.cv, c.cv) {
                             Ok((
                                 Important {
@@ -264,8 +403,16 @@ pub(crate) mod builder {
                             Err(self)
                         }
                     }
-                    [b, c] => {
-                        debug_assert!(real_len == 3);
+                    [WhitespaceAndValueAndRemaining {
+                        whitespace: bw,
+                        value: b,
+                    }, WhitespaceAndValueAndRemaining {
+                        whitespace: cw,
+                        value: c,
+                    }] => {
+                        debug_assert!(
+                            real_len == 3 + count_some(&[bw, cw]) + some_to_1(&last_whitespace)
+                        );
 
                         if let Some((bang, important)) = Important::is_bang_important(b.cv, c.cv) {
                             Ok((
@@ -280,8 +427,11 @@ pub(crate) mod builder {
                             Err(self)
                         }
                     }
-                    [c] => {
-                        debug_assert!(real_len == 2);
+                    [WhitespaceAndValueAndRemaining {
+                        whitespace: cw,
+                        value: c,
+                    }] => {
+                        debug_assert!(real_len == 2 + some_to_1(cw) + some_to_1(&last_whitespace));
                         let b = first;
                         if let Some((bang, important)) = Important::is_bang_important(b.cv, c.cv) {
                             Ok((
@@ -297,7 +447,7 @@ pub(crate) mod builder {
                         }
                     }
                     [] => {
-                        debug_assert!(real_len == 1);
+                        debug_assert!(real_len == 1 + some_to_1(&last_whitespace));
 
                         Err(self)
                     }
@@ -306,21 +456,40 @@ pub(crate) mod builder {
             }
         }
 
-        const fn last(&self) -> Option<ValueAndRemaining<'a>> {
+        const fn last_non_whitespace(&self) -> Option<ValueAndRemaining<'a>> {
             match self {
                 ValueList::Empty => None,
                 ValueList::NotEmpty {
                     first,
                     last_3,
+                    last_whitespace: _,
                     real_len: _,
                 } => Some(match last_3.as_slice().last() {
-                    Some(v) => *v,
+                    Some(v) => v.value,
                     None => *first,
                 }),
             }
         }
 
-        const fn span(&self) -> Span<'a> {
+        const fn last_maybe_whitespace(&self) -> Option<ValueAndRemaining<'a>> {
+            match self {
+                ValueList::Empty => None,
+                ValueList::NotEmpty {
+                    first: _,
+                    last_3: _,
+                    last_whitespace,
+                    real_len: _,
+                } => {
+                    if let Some(last_whitespace) = last_whitespace {
+                        Some((*last_whitespace).into_component_value_and_remaining())
+                    } else {
+                        self.last_non_whitespace()
+                    }
+                }
+            }
+        }
+
+        const fn span_without_trailing_whitespace(&self) -> Span<'a> {
             match self {
                 ValueList::Empty => Span {
                     full: CopyableTokenStream::EMPTY,
@@ -329,10 +498,11 @@ pub(crate) mod builder {
                 ValueList::NotEmpty {
                     first,
                     last_3,
+                    last_whitespace: _,
                     real_len,
                 } => match last_3.as_slice().last() {
                     Some(last) => Span {
-                        full: first.full.before(last.remaining),
+                        full: first.full.before(last.value.remaining),
                         len: *real_len,
                     },
                     None => Span {
@@ -343,34 +513,53 @@ pub(crate) mod builder {
             }
         }
 
-        const fn value_including_important(&self) -> Option<CopyableTokenStream<'a>> {
+        const fn value_including_important_without_trailing_whitespace(
+            &self,
+        ) -> Option<CopyableTokenStream<'a>> {
             match self {
                 ValueList::Empty => None,
                 ValueList::NotEmpty {
                     first,
                     last_3,
+                    last_whitespace: _,
                     real_len: _,
                 } => Some(match last_3.as_slice().last() {
-                    Some(last) => first.full.before(last.remaining),
+                    Some(last) => first.full.before(last.value.remaining),
                     None => first.full.before(first.remaining),
                 }),
             }
         }
 
-        const fn last_2_copied(&self) -> ArrayVec<ValueAndRemaining<'a>, 2> {
+        /// Last 2 non whitespace that haven't been returned.
+        const fn last_2_non_whitespace_copied(
+            &self,
+        ) -> ArrayVec<WhitespaceAndValueAndRemaining<'a>, 2> {
             match self {
                 ValueList::Empty => ArrayVec::EMPTY,
                 ValueList::NotEmpty {
                     first,
                     last_3,
+                    last_whitespace: _,
                     real_len: _,
-                } => match last_3.as_slice() {
-                    [_, b, c] => ArrayVec::new_filled([*b, *c]),
-                    [b, c] => ArrayVec::new_filled([*b, *c]),
-                    [c] => ArrayVec::new_filled([*first, *c]),
-                    [] => ArrayVec::EMPTY.with_push(*first),
-                    _ => unreachable!(),
-                },
+                } => {
+                    match last_3.as_slice() {
+                        // the first has been returned by Self::with_push
+                        [_, b, c] => ArrayVec::new_filled([*b, *c]),
+                        [b, c] => ArrayVec::new_filled([*b, *c]),
+                        [c] => ArrayVec::new_filled([
+                            WhitespaceAndValueAndRemaining {
+                                whitespace: None,
+                                value: *first,
+                            },
+                            *c,
+                        ]),
+                        [] => ArrayVec::EMPTY.with_push(WhitespaceAndValueAndRemaining {
+                            whitespace: None,
+                            value: *first,
+                        }),
+                        _ => unreachable!(),
+                    }
+                }
             }
         }
 
@@ -380,30 +569,49 @@ pub(crate) mod builder {
                 ValueList::NotEmpty {
                     first,
                     last_3: _,
+                    last_whitespace: _,
                     real_len: _,
                 } => Some(first),
             }
         }
     }
 
-    pub(crate) struct KnownDeclarationValueListBuilder<
-        'a,
-        L: IsKnownComponentValueListWithConstEmpty<'a>,
-    > {
+    pub(crate) struct KnownDeclarationValueListBuilder<'a, L: IsKnownComponentValueList<'a>> {
         // the full list is list_builder + value_list.last_3
         list_builder: KnownComponentValueListBuilder<'a, L>,
         value_list: ValueList<'a>,
     }
 
-    impl<'a, L: IsKnownComponentValueListWithConstEmpty<'a>> KnownDeclarationValueListBuilder<'a, L> {
+    impl<'a, L: IsKnownComponentValueList<'a>> KnownDeclarationValueListBuilder<'a, L> {
+        pub(super) const fn new() -> Self {
+            Self {
+                list_builder: KnownComponentValueList::start_builder(),
+                value_list: ValueList::Empty,
+            }
+        }
+    }
+
+    const fn value_of_whitespace(ws: WhitespaceToken) -> ComponentValue {
+        ComponentValue::PreservedTokens(Token::Whitespace(ws))
+    }
+
+    impl<
+            'a,
+            L: IsKnownComponentValueListWithConstEmpty<'a>,
+            const ARRAY_VEC_CAP: usize,
+            const LEAD_VEC_CAP: usize,
+        > KnownDeclarationValueListBuilder<'a, L>
+    where
+        L::Collection: IsKnownCollection<
+            ComponentValue<'a>,
+            ArrayVecType = ArrayVec<ComponentValue<'a>, ARRAY_VEC_CAP>,
+            LeadVecType = LeadVec<ComponentValue<'a>, LEAD_VEC_CAP>,
+        >,
+    {
         pub(crate) const fn with_push(
             self,
             tar: TokenAndRemaining<'a, ComponentValue<'a>>,
         ) -> Self {
-            if tar.token.is_whitespace() {
-                return self;
-            }
-
             let TokenAndRemaining {
                 token,
                 remaining,
@@ -418,9 +626,8 @@ pub(crate) mod builder {
                     full,
                 });
 
-            let list_builder = if let Some(value_that_is_not_last_2) = value_that_is_not_last_2 {
-                self.list_builder
-                    .with_push(value_that_is_not_last_2.cv, value_that_is_not_last_2.full)
+            let list_builder = if let Some(wv) = value_that_is_not_last_2 {
+                wv.push_to(self.list_builder)
             } else {
                 self.list_builder
             };
@@ -436,12 +643,22 @@ pub(crate) mod builder {
             after_colon: CopyableTokenStream<'a>,
         ) -> BuildOutput<'a, L> {
             // after values and !important
-            let after_value_and_important = match self.value_list.last() {
+            let after_value_and_important = match self.value_list.last_non_whitespace() {
                 Some(v) => v.remaining,
                 None => after_colon,
             };
 
-            let value_and_important = match self.value_list.value_including_important() {
+            // after values and !important
+            let after_value_and_important_and_trailing_whitespace =
+                match self.value_list.last_maybe_whitespace() {
+                    Some(v) => v.remaining,
+                    None => after_colon,
+                };
+
+            let value_and_important = match self
+                .value_list
+                .value_including_important_without_trailing_whitespace()
+            {
                 Some(v) => v,
                 None => after_colon.before(after_colon),
             };
@@ -469,19 +686,18 @@ pub(crate) mod builder {
                         let mut list_builder = self.list_builder;
 
                         {
-                            let last_2 = values.last_2_copied();
+                            let last_2 = values.last_2_non_whitespace_copied();
                             let last_2 = last_2.as_slice();
 
                             let mut i = 0;
                             while i < last_2.len() {
-                                let var = last_2[i];
-                                list_builder = list_builder.with_push(var.cv, var.full);
+                                list_builder = last_2[i].push_to(list_builder);
 
                                 i += 1;
                             }
                         }
 
-                        list_builder.build(match values.last() {
+                        list_builder.build(match values.last_non_whitespace() {
                             Some(last) => last.remaining,
                             None => after_colon,
                         })
@@ -494,13 +710,7 @@ pub(crate) mod builder {
                 important,
                 value_and_important,
                 after_value_and_important,
-            }
-        }
-
-        pub(super) const fn new() -> Self {
-            Self {
-                list_builder: KnownParsedValueList::start_builder(),
-                value_list: ValueList::Empty,
+                after_value_and_important_and_trailing_whitespace,
             }
         }
     }
@@ -510,5 +720,6 @@ pub(crate) mod builder {
         pub(crate) important: Option<Important<'a>>,
         pub(crate) value_and_important: CopyableTokenStream<'a>,
         pub(crate) after_value_and_important: CopyableTokenStream<'a>,
+        pub(crate) after_value_and_important_and_trailing_whitespace: CopyableTokenStream<'a>,
     }
 }

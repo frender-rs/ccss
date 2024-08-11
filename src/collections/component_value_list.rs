@@ -1,6 +1,7 @@
 use crate::{
     const_known::{No, Yes, YesOrNo},
     parse::component_value::ComponentValue,
+    token::stream::CopyableTokenStream,
 };
 
 use super::{
@@ -16,43 +17,36 @@ pub struct KnownComponentValueList<'a, V: IsKnownComponentValueList<'a>> {
     value_list: KnownParsedValueList<'a, V::Collection, ComponentValue<'a>>,
 }
 
-impl<
-        'a,
-        V: IsKnownComponentValueList<'a>,
-        const ARRAY_VEC_CAP: usize,
-        const LEAD_VEC_CAP: usize,
-    > Copy for KnownComponentValueList<'a, V>
-where
-    V::Collection: IsKnownCollection<
-        ComponentValue<'a>,
-        ArrayVecType = ArrayVec<ComponentValue<'a>, ARRAY_VEC_CAP>,
-        LeadVecType = LeadVec<ComponentValue<'a>, LEAD_VEC_CAP>,
-    >,
-{
+impl<'a, V: IsKnownComponentValueList<'a>> KnownComponentValueList<'a, V> {
+    pub(crate) const fn full(&self) -> CopyableTokenStream<'a> {
+        self.value_list.full()
+    }
+
+    pub(crate) const fn full_as_str(&self) -> &'a str {
+        self.value_list.full_as_str()
+    }
+
+    pub(crate) const fn as_known_parsed_value_list(
+        &self,
+    ) -> &KnownParsedValueList<'a, V::Collection, ComponentValue<'a>> {
+        &self.value_list
+    }
 }
 
-impl<
-        'a,
-        V: IsKnownComponentValueList<'a>,
-        const ARRAY_VEC_CAP: usize,
-        const LEAD_VEC_CAP: usize,
-    > Clone for KnownComponentValueList<'a, V>
-where
-    V::Collection: IsKnownCollection<
-        ComponentValue<'a>,
-        ArrayVecType = ArrayVec<ComponentValue<'a>, ARRAY_VEC_CAP>,
-        LeadVecType = LeadVec<ComponentValue<'a>, LEAD_VEC_CAP>,
-    >,
-{
+impl<'a, V: IsKnownComponentValueListWithConstEmpty<'a>> KnownComponentValueList<'a, V> {
+    pub(crate) const EMPTY: Self = Self {
+        value_list: KnownParsedValueList::EMPTY,
+    };
+}
+
+impl<'a, V: IsKnownComponentValueList<'a>> Copy for KnownComponentValueList<'a, V> {}
+impl<'a, V: IsKnownComponentValueList<'a>> Clone for KnownComponentValueList<'a, V> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<'a, V: IsKnownComponentValueList<'a>> std::fmt::Debug for KnownComponentValueList<'a, V>
-where
-    KnownParsedValueList<'a, V::Collection, ComponentValue<'a>>: std::fmt::Debug,
-{
+impl<'a, V: IsKnownComponentValueList<'a>> std::fmt::Debug for KnownComponentValueList<'a, V> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("KnownComponentValueList")
             .field("value_list", &self.value_list)
@@ -129,13 +123,14 @@ pub(crate) mod builder {
         IsKnownComponentValueList, IsKnownComponentValueListWithConstEmpty, KnownComponentValueList,
     };
     impl<'a, V: IsKnownComponentValueList<'a>> KnownComponentValueList<'a, V> {
-        pub(crate) fn start_builder() {}
+        pub(crate) const fn start_builder() -> KnownComponentValueListBuilder<'a, V> {
+            KnownComponentValueListBuilder {
+                value_list_builder: KnownParsedValueList::start_builder(),
+            }
+        }
     }
 
-    pub(crate) struct KnownComponentValueListBuilder<
-        'a,
-        V: IsKnownComponentValueListWithConstEmpty<'a>,
-    > {
+    pub(crate) struct KnownComponentValueListBuilder<'a, V: IsKnownComponentValueList<'a>> {
         value_list_builder: KnownParsedValueListBuilder<'a, V::Collection, ComponentValue<'a>>,
     }
 
