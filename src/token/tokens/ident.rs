@@ -6,10 +6,6 @@ use crate::input::{code_points::LEFT_PARENTHESIS, Filtered};
 pub struct IdentToken<'a>(IdentSequence<'a>);
 
 impl<'a> IdentToken<'a> {
-    pub const fn to_str(self) -> &'a str {
-        self.0.to_str()
-    }
-
     pub const fn new_const(s: &'a str) -> Self {
         let (v, stream) = Self::consume(Filtered::new(s));
 
@@ -47,5 +43,22 @@ impl<'a> IdentToken<'a> {
 
     pub(crate) const fn from_ident_sequence(v: IdentSequence<'a>) -> Self {
         Self(v)
+    }
+
+    pub(crate) const fn as_ident_sequence(&self) -> IdentSequence<'a> {
+        self.0
+    }
+}
+
+#[cfg(feature = "alloc")]
+mod alloc {
+    use alloc::borrow::Cow;
+
+    use super::IdentToken;
+
+    impl<'a> IdentToken<'a> {
+        pub fn unescape(&self) -> Cow<'a, str> {
+            self.0.unescape()
+        }
     }
 }

@@ -92,7 +92,9 @@ impl<'a> Important<'a> {
                 ComponentValue::PreservedTokens(Token::Delim(t)),
                 ComponentValue::PreservedTokens(Token::IdentLike(IdentLikeToken::Ident(ident))),
             ) if t.value().to_char() == '!'
-                && str_matches_important_ascii_case_insensitive(ident.to_str()) =>
+                && ident
+                    .as_ident_sequence()
+                    .matches_important_ascii_case_insensitive() =>
             {
                 Some((t, ident))
             }
@@ -441,11 +443,13 @@ impl<'a, L: IsKnownComponentValueList<'a>> Declaration<'a, L> {
         self.name
     }
 
-    pub fn name_as_str(&self) -> &'a str {
-        self.name.to_str()
+    /// The returned str may contain [escaped code points](https://drafts.csswg.org/css-syntax-3/#consume-escaped-code-point).
+    pub fn name_as_original_str(&self) -> &'a str {
+        self.name.as_ident_sequence().original_str()
     }
 
-    pub fn value_as_str(&self) -> &'a str {
+    /// The returned str may contain [escaped code points](https://drafts.csswg.org/css-syntax-3/#consume-escaped-code-point).
+    pub fn value_as_original_str(&self) -> &'a str {
         self.value.full_as_str()
     }
 
@@ -453,8 +457,13 @@ impl<'a, L: IsKnownComponentValueList<'a>> Declaration<'a, L> {
         self.important.is_some()
     }
 
-    pub fn to_tuple_str(self) -> (&'a str, &'a str, bool) {
-        (self.name_as_str(), self.value_as_str(), self.is_important())
+    /// The returned str may contain [escaped code points](https://drafts.csswg.org/css-syntax-3/#consume-escaped-code-point).
+    pub fn to_tuple_original_str(self) -> (&'a str, &'a str, bool) {
+        (
+            self.name_as_original_str(),
+            self.name_as_original_str(),
+            self.is_important(),
+        )
     }
 
     pub const fn value_and_important_as_str(&self) -> &'a str {
@@ -471,23 +480,6 @@ impl<'a, const CAP: usize> Declaration<'a, ArrayVec<ComponentValue<'a>, CAP>> {
             .as_variant()
             .as_slice()
     }
-}
-
-const fn str_matches_important_ascii_case_insensitive(s: &str) -> bool {
-    matches!(
-        s.as_bytes(),
-        [
-            b'i' | b'I',
-            b'm' | b'M',
-            b'p' | b'P',
-            b'o' | b'O',
-            b'r' | b'R',
-            b't' | b'T',
-            b'a' | b'A',
-            b'n' | b'N',
-            b't' | b'T',
-        ]
-    )
 }
 
 /// [Parse a list of declarations](https://www.w3.org/TR/css-syntax-3/#parse-list-of-declarations)

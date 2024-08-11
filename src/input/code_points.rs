@@ -12,6 +12,11 @@ pub const HYPHEN_MINUS: char = '\u{002D}';
 
 pub const PERCENTAGE_SIGN: char = '\u{0025}';
 
+// U+000D CARRIAGE RETURN (CR)
+pub(crate) const CR: char = '\u{000D}';
+// U+000C FORM FEED (FF)
+pub(crate) const FF: char = '\u{000C}';
+
 /// https://drafts.csswg.org/css-syntax-3/#ident-start-code-point
 pub const fn is_ident_start_code_point(c: char) -> bool {
     match c {

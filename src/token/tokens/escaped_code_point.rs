@@ -64,4 +64,11 @@ impl EscapedCodePoint {
             _ => false,
         }
     }
+
+    pub(crate) const fn to_code_point(&self) -> FilteredChar {
+        match self {
+            EscapedCodePoint::HexDigits(hd) => hd.to_code_point(),
+            EscapedCodePoint::Other(c) => *c,
+        }
+    }
 }

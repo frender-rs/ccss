@@ -170,7 +170,7 @@ impl<'a> Token<'a> {
 
                     let (ident, stream) = IdentSequence::consume_anyway(stream);
 
-                    assert!(!ident.to_str().is_empty());
+                    assert!(!ident.original_str().is_empty());
 
                     return out(
                         Self::Hash(HashToken {
@@ -376,7 +376,10 @@ mod tests {
                     remaining.assert_empty();
                     match t {
                         Token::IdentLike(IdentLikeToken::Ident(ident)) => {
-                            match ident.to_str().as_bytes() {
+                            assert!(ident
+                                .as_ident_sequence()
+                                .matches_chars_ignore_ascii_case(&['-']));
+                            match ident.as_ident_sequence().original_str().as_bytes() {
                                 b"\\-" => {}
                                 _ => panic!(),
                             }
@@ -406,5 +409,15 @@ mod tests {
             token,
             Token::IdentLike(IdentLikeToken::Ident(IdentToken::new_const("\\-")))
         );
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn unescape_ident() {
+        use alloc::borrow::Cow;
+
+        let res = IdentToken::new_const("\\-").unescape();
+        assert!(matches!(res, Cow::Owned(_)));
+        assert_eq!(res, "-");
     }
 }

@@ -9,3 +9,6 @@ konst = { version = "0.3.9", features = ["iter"] }
 [dev-dependencies]
 serde = { version = "1.0.204", features = ["derive"] }
 serde_json = "1.0.122"
+
+[features]
+alloc = []
