@@ -33,6 +33,7 @@ pub(crate) mod hex_digit;
 mod hex_digits;
 
 mod ident_sequence;
+pub use ident_sequence::IdentSequence;
 
 mod escaped_code_point;
 

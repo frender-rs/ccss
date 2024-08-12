@@ -62,3 +62,22 @@ mod alloc {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::IdentToken;
+
+    const _: () = {
+        assert!(matches!(
+            IdentToken::new_const("s")
+                .as_ident_sequence()
+                .original_str()
+                .as_bytes(),
+            b"s"
+        ));
+
+        assert!(IdentToken::new_const("\0red")
+            .as_ident_sequence()
+            .matches_chars(&[char::REPLACEMENT_CHARACTER, 'r', 'e', 'd']))
+    };
+}

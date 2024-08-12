@@ -1,3 +1,5 @@
+#![cfg(feature = "alloc")]
+
 use std::borrow::Cow;
 
 use ccss::{
@@ -44,20 +46,7 @@ fn test_all() {
             let d = d
                 .as_slice()
                 .iter()
-                .map(|d| util::declaration::Declaration {
-                    name: d.name_as_str().into(),
-                    value: {
-                        let s = d.value_as_slice();
-
-                        s.iter()
-                            .map(|v| {
-                                util::component_value::ComponentValue::from_parsed(*v)
-                                    .map_str(Cow::Borrowed)
-                            })
-                            .collect()
-                    },
-                    important: d.is_important(),
-                })
+                .map(|d| util::declaration::Declaration::from_parsed(*d))
                 .map(DeclarationRule::Declaration)
                 .map(Ok)
                 .map(|result| MaybeError { result })

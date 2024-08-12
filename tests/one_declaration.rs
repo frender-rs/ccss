@@ -1,3 +1,5 @@
+#![cfg(feature = "alloc")]
+
 use std::borrow::Cow;
 
 use ccss::{collections::array_vec::ArrayVec, parse::declaration::DeclarationParseListError};

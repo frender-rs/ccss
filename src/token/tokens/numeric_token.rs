@@ -45,33 +45,53 @@ impl<'a> Number<'a> {
             _ => {}
         }
 
-        let (number, mut stream) = stream.consume_digits();
+        let before_consume_digits = stream.copy();
+        let (mut number, mut stream) = stream.consume_digits();
+
+        {
+            let stream_before_next_two = stream.copy();
+            match stream.next_two() {
+                // U+002E FULL STOP (.) followed by a digit
+                Some(([a, b], new_stream)) if a.to_char() == '.' && b.is_digit() => {
+                    (_, stream) = new_stream.consume_digits();
+                    number = before_consume_digits.str_before(&stream);
+                    kind = NumberKind::Number;
+                }
+                _ => {
+                    stream = stream_before_next_two;
+                }
+            }
+        };
 
         let stream_before_next_two = stream.copy();
+
         match stream.next_two() {
-            // U+002E FULL STOP (.) followed by a digit
-            Some(([a, b], new_stream)) if a.to_char() == '.' && b.is_digit() => {
-                (_, stream) = new_stream.consume_digits();
-                kind = NumberKind::Number;
-            }
             Some(([a, b], new_stream)) if matches!(a.to_char(), 'E' | 'e') => {
                 if number.is_empty() {
                     return (None, original);
                 }
 
-                let (c, new_stream) = if let Some((fc, new_stream)) = new_stream.copy().next() {
-                    (Some(fc), new_stream)
-                } else {
-                    (None, new_stream)
-                };
+                match b {
+                    b if b.is_digit() => {
+                        (_, stream) = new_stream.consume_digits();
+                        kind = NumberKind::Number;
+                    }
+                    b if matches!(b.to_char(), '+' | '-') => {
+                        let res = match new_stream.next() {
+                            Some((fc, new_stream)) if fc.is_digit() => Some((fc, new_stream)),
+                            _ => None,
+                        };
 
-                if b.is_digit()
-                    || (matches!(b.to_char(), '+' | '-') && matches!(c, Some(c) if c.is_digit()))
-                {
-                    (_, stream) = new_stream.consume_digits();
-                    kind = NumberKind::Number;
-                } else {
-                    stream = stream_before_next_two;
+                        if let Some((_, new_stream)) = res {
+                            (_, stream) = new_stream.consume_digits();
+                            kind = NumberKind::Number;
+                        } else {
+                            stream = stream_before_next_two;
+                        }
+                    }
+                    _ => {
+                        stream = stream_before_next_two;
+                    }
                 }
             }
             _ => {
@@ -177,5 +197,51 @@ impl<'a> NumericToken<'a> {
             ),
             _ => (Self::Number(number), original),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{input::Filtered, token::tokens::NumberKind};
+
+    use super::Number;
+
+    const _: () = {
+        let n = Number::new("12e2");
+        assert!(matches!(
+            n,
+            Number {
+                full,
+                kind: NumberKind::Number,
+                sign: None
+            } if matches!(full.as_bytes(), b"12e2")
+        ));
+    };
+
+    #[test]
+    fn number() {
+        let (n, remaining) = Number::consume(Filtered::new("12e2 "));
+
+        assert_eq!(
+            n.unwrap(),
+            Number {
+                full: "12e2",
+                kind: NumberKind::Number,
+                sign: None
+            }
+        );
+        assert_eq!(remaining.0.as_str(), " ");
+    }
+
+    #[test]
+    fn number2() {
+        assert_eq!(
+            Number::new(".68e+3"),
+            Number {
+                full: ".68e+3",
+                kind: NumberKind::Number,
+                sign: None
+            }
+        );
     }
 }

@@ -22,6 +22,12 @@ pub struct FunctionToken<'a> {
     value: IdentSequence<'a>,
 }
 
+impl<'a> FunctionToken<'a> {
+    pub(crate) const fn value(&self) -> IdentSequence<'a> {
+        self.value
+    }
+}
+
 /// https://drafts.csswg.org/css-syntax-3/#consume-ident-like-token
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IdentLikeToken<'a> {

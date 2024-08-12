@@ -32,6 +32,12 @@ pub struct AtKeywordToken<'a> {
     ident: IdentSequence<'a>,
 }
 
+impl<'a> AtKeywordToken<'a> {
+    pub const fn value(&self) -> IdentSequence<'a> {
+        self.ident
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DelimToken<'a> {
     full: &'a str,
@@ -54,6 +60,16 @@ pub struct HashToken<'a> {
     full: &'a str,
     kind: HashTokenKind,
     value: IdentSequence<'a>,
+}
+
+impl<'a> HashToken<'a> {
+    pub const fn kind(&self) -> HashTokenKind {
+        self.kind
+    }
+
+    pub const fn value(&self) -> IdentSequence<'a> {
+        self.value
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -376,9 +392,7 @@ mod tests {
                     remaining.assert_empty();
                     match t {
                         Token::IdentLike(IdentLikeToken::Ident(ident)) => {
-                            assert!(ident
-                                .as_ident_sequence()
-                                .matches_chars_ignore_ascii_case(&['-']));
+                            assert!(ident.as_ident_sequence().matches_chars(&['-']));
                             match ident.as_ident_sequence().original_str().as_bytes() {
                                 b"\\-" => {}
                                 _ => panic!(),

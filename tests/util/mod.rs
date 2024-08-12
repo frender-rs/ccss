@@ -215,11 +215,15 @@ mod serde_seq_flatten {
 
 pub mod component_value {
 
+    use std::borrow::Cow;
+
     use serde::Deserialize;
 
     use ccss::parse::component_value::ComponentValue as Parsed;
 
     use crate::util::serde_seq_flatten::SeqFlatten;
+
+    use super::error::Error;
 
     define_literals!(
         type NumberLiteral = HasNumberLiteral<"number">;
@@ -359,6 +363,109 @@ pub mod component_value {
     }
 
     define_literals!(
+        type PercentageLiteral = HasPercentageLiteral<"percentage">;
+    );
+
+    #[derive(Deserialize, Debug, PartialEq)]
+    #[serde(from = "NumericRaw<PercentageLiteral, S, NumberValue>")]
+    pub struct Percentage<S> {
+        representation: S,
+        value: NumberValue,
+    }
+    impl<S> Percentage<S> {
+        fn map_str<SS>(self, mut f: impl FnMut(S) -> SS) -> Percentage<SS> {
+            Percentage {
+                representation: f(self.representation),
+                value: self.value,
+            }
+        }
+    }
+
+    impl<'a> Percentage<&'a str> {
+        fn from_parsed(parsed: ccss::token::tokens::PercentageToken<'a>) -> Self {
+            let Number {
+                representation,
+                value,
+            } = Number::from_parsed(parsed.number);
+            Self {
+                representation,
+                value,
+            }
+        }
+    }
+
+    impl<S> From<NumericRaw<PercentageLiteral, S, NumberValue>> for Percentage<S> {
+        fn from(
+            NumericRaw {
+                literal: _,
+                representation,
+                rest: value,
+            }: NumericRaw<PercentageLiteral, S, NumberValue>,
+        ) -> Self {
+            Self {
+                representation,
+                value,
+            }
+        }
+    }
+
+    define_literals!(
+        type DimensionLiteral = HasDimensionLiteral<"dimension">;
+    );
+
+    #[derive(Debug, PartialEq, Deserialize)]
+    #[serde(from = "NumericRaw<DimensionLiteral, S, SeqFlatten<NumberValue, (S,)>>")]
+    pub struct Dimension<S> {
+        pub number: Number<S>,
+        pub unit: S,
+    }
+    impl<S> Dimension<S> {
+        fn map_str<SS>(self, mut f: impl FnMut(S) -> SS) -> Dimension<SS> {
+            Dimension {
+                unit: f(self.unit),
+                number: self.number.map_str(f),
+            }
+        }
+    }
+
+    impl<S> From<NumericRaw<DimensionLiteral, S, SeqFlatten<NumberValue, (S,)>>> for Dimension<S> {
+        fn from(
+            NumericRaw {
+                literal: _,
+                representation,
+                rest: SeqFlatten(value, (unit,)),
+            }: NumericRaw<DimensionLiteral, S, SeqFlatten<NumberValue, (S,)>>,
+        ) -> Self {
+            Self {
+                number: Number {
+                    representation,
+                    value,
+                },
+                unit,
+            }
+        }
+    }
+
+    #[test]
+    fn test_dimension() {
+        let v = serde_json::from_str::<Dimension<&str>>(
+            r##"["dimension", "-0", 0, "integer", "red"]"##,
+        )
+        .unwrap();
+
+        assert_eq!(
+            v,
+            Dimension {
+                number: Number {
+                    representation: "-0",
+                    value: NumberValue::Integer(0)
+                },
+                unit: "red"
+            }
+        );
+    }
+
+    define_literals!(
         type WhitespaceLiteral = HasWhitespaceLiteral<" ">;
     );
 
@@ -372,14 +479,239 @@ pub mod component_value {
         }
     }
 
+    #[derive(Debug, PartialEq)]
+    pub struct PreservedTokens<S>(pub S);
+
+    impl<'de, S: Deserialize<'de>> Deserialize<'de> for PreservedTokens<S> {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            struct VisitOnlyStr<T>(std::marker::PhantomData<T>);
+
+            impl<'de, T: Deserialize<'de>> serde::de::Visitor<'de> for VisitOnlyStr<T> {
+                type Value = T;
+
+                fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                    formatter.write_str("a string")
+                }
+
+                fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+                where
+                    E: serde::de::Error,
+                {
+                    T::deserialize(serde::de::value::StrDeserializer::new(v))
+                }
+
+                fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
+                where
+                    E: serde::de::Error,
+                {
+                    T::deserialize(serde::de::value::StringDeserializer::new(v))
+                }
+            }
+
+            deserializer
+                // TODO: what if S can be optimized with deserialize_string?
+                .deserialize_str(VisitOnlyStr::<S>(std::marker::PhantomData))
+                .map(Self)
+        }
+    }
+
+    define_literals!(
+        type FunctionLiteral = HasFunctionLiteral<"function">;
+    );
+
+    #[derive(Deserialize, Debug, PartialEq)]
+    #[serde(from = "SeqFlatten<(FunctionLiteral, S), Vec<ComponentValue<S>>>")]
+    pub struct Function<S> {
+        pub name: S,
+        pub arguments: Vec<ComponentValue<S>>,
+    }
+    impl<S> Function<S> {
+        fn map_str_by_mut<SS>(self, f: &mut impl FnMut(S) -> SS) -> Function<SS> {
+            Function {
+                name: f(self.name),
+                arguments: self
+                    .arguments
+                    .into_iter()
+                    .map(|v| v.map_str_by_mut(f))
+                    .collect(),
+            }
+        }
+    }
+
+    impl<S> From<SeqFlatten<(FunctionLiteral, S), Vec<ComponentValue<S>>>> for Function<S> {
+        fn from(
+            SeqFlatten((_, name), arguments): SeqFlatten<
+                (FunctionLiteral, S),
+                Vec<ComponentValue<S>>,
+            >,
+        ) -> Self {
+            Self { name, arguments }
+        }
+    }
+
+    define_literals!(
+        type AtKeywordLiteral = HasAtKeywordLiteral<"at-keyword">;
+    );
+
+    #[derive(Debug, PartialEq, Deserialize)]
+    #[serde(from = "(AtKeywordLiteral, S)")]
+    pub struct AtKeyword<S> {
+        pub value: S,
+    }
+    impl<S> AtKeyword<S> {
+        fn map_str<SS>(self, mut f: impl FnMut(S) -> SS) -> AtKeyword<SS> {
+            AtKeyword {
+                value: f(self.value),
+            }
+        }
+    }
+
+    impl<S> From<(AtKeywordLiteral, S)> for AtKeyword<S> {
+        fn from((_, value): (AtKeywordLiteral, S)) -> Self {
+            Self { value }
+        }
+    }
+
+    #[derive(Debug, PartialEq, Deserialize)]
+    #[serde(rename_all = "kebab-case")]
+    pub enum HashKind {
+        Id,
+        Unrestricted,
+    }
+
+    define_literals!(
+        type HashLiteral = HasHashLiteral<"hash">;
+    );
+
+    #[derive(Debug, PartialEq, Deserialize)]
+    #[serde(from = "(HashLiteral, S, HashKind)")]
+    pub struct Hash<S> {
+        value: S,
+        kind: HashKind,
+    }
+    impl<S> Hash<S> {
+        fn map_str<SS>(self, mut f: impl FnMut(S) -> SS) -> Hash<SS> {
+            Hash {
+                value: f(self.value),
+                kind: self.kind,
+            }
+        }
+    }
+
+    impl<S> From<(HashLiteral, S, HashKind)> for Hash<S> {
+        fn from((_, value, kind): (HashLiteral, S, HashKind)) -> Self {
+            Self { value, kind }
+        }
+    }
+
+    define_literals!(
+        type UnicodeRangeLiteral = HasUnicodeRangeLiteral<"unicode-range">;
+    );
+
+    #[derive(Debug, PartialEq, Deserialize)]
+    #[serde(from = "(UnicodeRangeLiteral, u32, u32)")]
+    pub struct UnicodeRange {
+        start: u32,
+        end: u32,
+    }
+
+    impl From<(UnicodeRangeLiteral, u32, u32)> for UnicodeRange {
+        fn from((_, start, end): (UnicodeRangeLiteral, u32, u32)) -> Self {
+            Self { start, end }
+        }
+    }
+
     #[derive(Deserialize, Debug, PartialEq)]
     #[serde(untagged)]
     pub enum ComponentValue<S> {
         Whitespace(Whitespace),
         Delim(char),
         Number(Number<S>),
+        Percentage(Percentage<S>),
+        Dimension(Dimension<S>),
         Block(Block<S>),
+        Function(Function<S>),
+        AtKeyword(AtKeyword<S>),
+        UnicodeRange(UnicodeRange),
+        Hash(Hash<S>),
         Typed(S, S),
+        PreservedTokens(PreservedTokens<S>),
+    }
+
+    impl<S> ComponentValue<S>
+    where
+        S: AsRef<str>,
+    {
+        fn normalize(
+            self,
+        ) -> std::iter::Chain<std::option::IntoIter<Self>, std::option::IntoIter<Self>> {
+            let this = match self {
+                Self::PreservedTokens(PreservedTokens(ref v)) => match v.as_ref() {
+                    "^=" => {
+                        return Some(Self::Delim('^'))
+                            .into_iter()
+                            .chain(Some(Self::Delim('=')))
+                    }
+                    _ => self,
+                },
+                Self::Block(this) => Self::Block(Block {
+                    kind: this.kind,
+                    content: Self::normalize_list(this.content),
+                }),
+                Self::Function(this) => Self::Function(Function {
+                    name: this.name,
+                    arguments: Self::normalize_list(this.arguments),
+                }),
+                _ => self,
+            };
+
+            Some(this).into_iter().chain(None)
+        }
+
+        pub(crate) fn into_iter_normalize(
+            this: impl IntoIterator<Item = Self>,
+        ) -> impl Iterator<Item = Self> {
+            this.into_iter().flat_map(Self::normalize)
+        }
+
+        pub(crate) fn normalize_list(this: impl IntoIterator<Item = Self>) -> Vec<Self> {
+            Self::into_iter_normalize(this).collect()
+        }
+
+        const DUMMY: Self = Self::Whitespace(Whitespace);
+
+        fn confirm_all_ok<'a>(
+            values: impl IntoIterator<Item = &'a mut Self>,
+        ) -> Result<(), Error<S>>
+        where
+            S: 'a,
+        {
+            for v in values {
+                *v = std::mem::replace(v, Self::DUMMY).confirm_ok()?
+            }
+
+            Ok(())
+        }
+
+        pub(crate) fn confirm_ok(mut self) -> Result<Self, Error<S>> {
+            Ok(match self {
+                ComponentValue::Typed(t, reason) if t.as_ref() == "error" => {
+                    return Err(Error { reason })
+                }
+                ComponentValue::Block(ref mut b) => {
+                    Self::confirm_all_ok(&mut b.content)?;
+                    self
+                }
+                ComponentValue::Function(ref mut f) => {
+                    Self::confirm_all_ok(&mut f.arguments)?;
+                    self
+                }
+                _ => self,
+            })
+        }
     }
 
     impl<S> ComponentValue<S> {
@@ -392,8 +724,17 @@ pub mod component_value {
                 ComponentValue::Whitespace(v) => ComponentValue::Whitespace(v),
                 ComponentValue::Delim(v) => ComponentValue::Delim(v),
                 ComponentValue::Number(v) => ComponentValue::Number(v.map_str(f)),
+                ComponentValue::Dimension(v) => ComponentValue::Dimension(v.map_str(f)),
                 ComponentValue::Block(v) => ComponentValue::Block(v.map_str_by_mut(f)),
                 ComponentValue::Typed(a, b) => ComponentValue::Typed(f(a), f(b)),
+                ComponentValue::PreservedTokens(PreservedTokens(s)) => {
+                    ComponentValue::PreservedTokens(PreservedTokens(f(s)))
+                }
+                ComponentValue::Function(v) => ComponentValue::Function(v.map_str_by_mut(f)),
+                ComponentValue::AtKeyword(v) => ComponentValue::AtKeyword(v.map_str(f)),
+                ComponentValue::Hash(v) => ComponentValue::Hash(v.map_str(f)),
+                ComponentValue::Percentage(v) => ComponentValue::Percentage(v.map_str(f)),
+                ComponentValue::UnicodeRange(v) => ComponentValue::UnicodeRange(v),
             }
         }
 
@@ -404,34 +745,93 @@ pub mod component_value {
         pub(crate) const fn is_whitespace(&self) -> bool {
             matches!(self, Self::Whitespace(..))
         }
+
+        pub(crate) fn has_error(&self) -> bool
+        where
+            S: AsRef<str>,
+        {
+            match self {
+                ComponentValue::Block(b) => &b.content,
+                ComponentValue::Function(f) => &f.arguments,
+                ComponentValue::Typed(t, _) => return t.as_ref() == "error",
+                _ => return false,
+            }
+            .iter()
+            .any(|v| v.has_error())
+        }
     }
 
-    impl<'a> ComponentValue<&'a str> {
+    impl<'a> ComponentValue<Cow<'a, str>> {
+        fn parse_list_from_str(input: &'a str) -> Vec<ComponentValue<Cow<'a, str>>> {
+            Parsed::parse_list_from_str(input)
+                .map(|v| Self::from_parsed(v.unwrap()))
+                .collect()
+        }
+
         pub(crate) fn from_parsed(v: Parsed<'a>) -> Self {
-            use ccss::token::tokens::{IdentLikeToken, NumericToken, Token};
+            use ccss::token::tokens::{
+                IdentLikeToken, NumericToken, SimpleBlockSurroundingTokens, SimpleToken, Token,
+            };
             match v {
                 Parsed::PreservedTokens(t) => match t {
                     Token::Whitespace(_) => Self::Whitespace(Whitespace),
-                    Token::StringToken(_) => todo!(),
-                    Token::Simple(_) => todo!(),
+                    Token::StringToken(t) => Self::Typed("string".into(), t.value_unescape()),
+                    Token::Simple(t) => Self::Delim(match t {
+                        SimpleToken::LeftParenthesis(_) => todo!(),
+                        SimpleToken::RightParenthesis(_) => ')',
+                        SimpleToken::Comma(_) => ',',
+                        SimpleToken::Colon(_) => ':',
+                        SimpleToken::Semicolon(_) => ';',
+                        SimpleToken::LeftSquareBracket(_) => todo!(),
+                        SimpleToken::RightSquareBracket(_) => todo!(),
+                        SimpleToken::LeftCurlyBracket(_) => todo!(),
+                        SimpleToken::RightCurlyBracket(_) => todo!(),
+                    }),
                     Token::Numeric(t) => match t {
-                        NumericToken::Number(t) => Self::Number(Number::from_parsed(t)),
-                        NumericToken::Percentage(_) => todo!(),
-                        NumericToken::Dimension(_) => todo!(),
+                        NumericToken::Number(t) => {
+                            Self::Number(Number::from_parsed(t).map_str(Cow::Borrowed))
+                        }
+                        NumericToken::Percentage(t) => {
+                            Self::Percentage(Percentage::from_parsed(t).map_str(Cow::Borrowed))
+                        }
+                        NumericToken::Dimension(t) => Self::Dimension(Dimension {
+                            number: Number::from_parsed(t.number).map_str(Cow::Borrowed),
+                            unit: t.unit.unescape(),
+                        }),
                     },
                     Token::IdentLike(t) => match t {
-                        IdentLikeToken::Ident(t) => Self::Typed("ident", t.to_str()),
+                        IdentLikeToken::Ident(t) => Self::Typed("ident".into(), t.unescape()),
                         IdentLikeToken::Function(_) => todo!(),
                         IdentLikeToken::Url(_) => todo!(),
                     },
-                    Token::Cdc(_) => todo!(),
+                    Token::Cdc(t) => Self::PreservedTokens(PreservedTokens("-->".into())),
                     Token::Cdo(_) => todo!(),
-                    Token::AtKeyword(_) => todo!(),
+                    Token::AtKeyword(t) => Self::AtKeyword(AtKeyword {
+                        value: t.value().unescape(),
+                    }),
                     Token::Delim(t) => Self::Delim(t.value().to_char()),
-                    Token::Hash(_) => todo!(),
+                    Token::Hash(t) => Self::Hash(Hash {
+                        value: t.value().unescape(),
+                        kind: match t.kind() {
+                            ccss::token::tokens::HashTokenKind::Empty => HashKind::Unrestricted,
+                            ccss::token::tokens::HashTokenKind::Id => HashKind::Id,
+                        },
+                    }),
                 },
-                Parsed::Function(_) => todo!(),
-                Parsed::SimpleBlock(_) => todo!(),
+                Parsed::Function(t) => Self::Function(Function {
+                    name: t.name().unescape(),
+                    arguments: Self::parse_list_from_str(t.value_as_original_str()),
+                }),
+                Parsed::SimpleBlock(t) => Self::Block(Block {
+                    kind: match t.surrounding_tokens() {
+                        SimpleBlockSurroundingTokens::CurlyBracket(_, _) => BlockKind::CurlyBracket,
+                        SimpleBlockSurroundingTokens::SquareBracket(_, _) => {
+                            BlockKind::SquareBracket
+                        }
+                        SimpleBlockSurroundingTokens::Parenthesis(_, _) => BlockKind::Parenthesis,
+                    },
+                    content: Self::parse_list_from_str(t.value_as_original_str()),
+                }),
             }
         }
     }
@@ -527,9 +927,10 @@ pub mod declaration {
         pub(crate) fn from_parsed<'a, const CAP: usize>(parsed: Parsed<'a, CAP>) -> Self
         where
             S: From<&'a str>,
+            S: From<std::borrow::Cow<'a, str>>,
         {
             Self {
-                name: parsed.name_as_str().into(),
+                name: parsed.name().unescape().into(),
                 value: {
                     parsed
                         .value_as_slice()
@@ -683,6 +1084,13 @@ pub struct TestSuite<T, E> {
 }
 
 pub struct TestSuites<T, E>(pub Vec<TestSuite<T, E>>);
+
+impl<T, E> TestSuites<T, E> {
+    pub(crate) fn with_append(mut self, mut tests: Self) -> Self {
+        self.0.append(&mut tests.0);
+        self
+    }
+}
 
 impl<'de, T: Deserialize<'de>, E: Deserialize<'de>> Deserialize<'de> for TestSuites<T, E> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>

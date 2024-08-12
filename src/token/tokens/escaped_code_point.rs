@@ -59,16 +59,29 @@ impl EscapedCodePoint {
 
     /// https://drafts.csswg.org/css-syntax-3/#starts-with-a-valid-escape
     pub const fn chars_would_start(chars: FilteredCharVec<2>) -> bool {
-        match chars.to_chars_padding_zero() {
-            [REVERSE_SOLIDUS, b] => b != LF,
+        match chars.as_slice().to_char_slice() {
+            [REVERSE_SOLIDUS, b] => *b != LF,
             _ => false,
         }
     }
 
-    pub(crate) const fn to_code_point(&self) -> FilteredChar {
+    pub(crate) const fn to_code_point(&self) -> char {
         match self {
             EscapedCodePoint::HexDigits(hd) => hd.to_code_point(),
-            EscapedCodePoint::Other(c) => *c,
+            EscapedCodePoint::Other(c) => c.to_char(),
         }
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::input::Filtered;
+
+    use super::EscapedCodePoint;
+
+    const _: () = {
+        assert!(!EscapedCodePoint::chars_would_start(
+            Filtered::new("\\").first_n_code_points::<2>()
+        ));
+    };
 }

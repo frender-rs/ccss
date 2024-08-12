@@ -1,5 +1,4 @@
 use crate::collections::array_vec::ArrayVec;
-use crate::input::FilteredChar;
 
 use super::hex_digit::HexDigit;
 use super::whitespace::Whitespace;
@@ -44,7 +43,7 @@ impl<const N: usize> HexDigits<N> {
         let mut res = 0u32;
 
         let hex_digits = self.hex_digits.as_slice();
-        let mut i = hex_digits.len();
+        let mut i = hex_digits.len() - 1;
 
         let mut val = 1;
         loop {
@@ -66,16 +65,16 @@ impl<const N: usize> HexDigits<N> {
         res
     }
 
-    pub(crate) const fn to_code_point(&self) -> FilteredChar {
+    pub(crate) const fn to_code_point(&self) -> char {
         let n = self.to_u32();
 
         match n {
-            0 | 0xD800..=0xDBFF | 0xDC00..=0xDFFF => FilteredChar::REPLACEMENT_CHARACTER,
-            n if n > 0x10FFFF => FilteredChar::REPLACEMENT_CHARACTER,
-            n => FilteredChar::from_char(match char::from_u32(n) {
+            0 | 0xD800..=0xDBFF | 0xDC00..=0xDFFF => char::REPLACEMENT_CHARACTER,
+            n if n > 0x10FFFF => char::REPLACEMENT_CHARACTER,
+            n => match char::from_u32(n) {
                 Some(c) => c,
                 None => unreachable!(), // we have already checked n is valid for char, so just panic
-            }),
+            },
         }
     }
 }

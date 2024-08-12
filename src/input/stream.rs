@@ -131,6 +131,36 @@ impl Filtered<'_> {
         }
     }
 
+    /// The `bool` is true if there are char(s) filtered.
+    pub(crate) const fn next_and_report(self) -> Option<(FilteredChar, bool, Self)> {
+        if let Some((u, this)) = self.0.next() {
+            const CR: char = '\u{000D}';
+            let (u, is_filtered) = match u {
+                // U+000C FORM FEED (FF)
+                '\u{000C}' => (LF, true),
+                // U+000D CARRIAGE RETURN (CR)
+                CR => (
+                    if let Some((CR, this)) = this.copy().next() {
+                        if let Some((LF, this)) = this.next() {
+                            return Some((FilteredChar(LF), true, Self(this)));
+                        } else {
+                            LF
+                        }
+                    } else {
+                        LF
+                    },
+                    true,
+                ),
+                // U+0000 NULL
+                '\u{0000}' => ('\u{FFFD}', true),
+                u => (u, false),
+            };
+            Some((FilteredChar(u), is_filtered, Self(this)))
+        } else {
+            return None;
+        }
+    }
+
     pub const fn next_two(self) -> Option<([FilteredChar; 2], Self)> {
         let (a, this) = try_opt!(self.next());
         let (b, this) = try_opt!(this.next());

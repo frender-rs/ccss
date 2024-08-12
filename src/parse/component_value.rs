@@ -12,8 +12,9 @@ use crate::{
             TokenStreamProcess,
         },
         tokens::{
-            Comma, FunctionToken, IdentLikeToken, RightCurlyBracket, RightParenthesis, Semicolon,
-            SimpleBlockSurroundingTokens, SimpleToken, Token, TokenParseError, TokenParseResult,
+            Comma, FunctionToken, IdentLikeToken, IdentSequence, RightCurlyBracket,
+            RightParenthesis, Semicolon, SimpleBlockSurroundingTokens, SimpleToken, Token,
+            TokenParseError, TokenParseResult,
         },
     },
 };
@@ -30,6 +31,7 @@ impl<'a> HasConstDummyValue for ComponentValue<'a> {
     const DUMMY_VALUE: Self = Self::PreservedTokens(Token::DUMMY_VALUE);
 }
 
+/// Current the parsing algorithm doesn't allow EOF
 #[derive(Debug, Clone, Copy)]
 pub struct Function<'a> {
     full: CopyableTokenStream<'a>,
@@ -52,6 +54,14 @@ impl<'a> List<'a> {
 }
 
 impl<'a> Function<'a> {
+    pub const fn name(&self) -> IdentSequence<'a> {
+        self.function_token.value()
+    }
+
+    pub const fn value_as_original_str(&self) -> &'a str {
+        self.value.full.to_str()
+    }
+
     const fn consume(
         input: TokenStreamProcess<'a>,
     ) -> Result<(Self, TokenStream<'a>), ComponentValueParseOrTokenError<'a>> {
@@ -86,7 +96,7 @@ impl<'a> Function<'a> {
                                     full: original.before(&input).to_copyable(),
                                     function_token,
                                     value: List {
-                                        full: before_value.before(&input).to_copyable(),
+                                        full: before_value.before(&before_token).to_copyable(),
                                         len: value_len,
                                     },
                                     right_parenthesis,
@@ -209,11 +219,17 @@ impl<'a> SimpleBlock<'a> {
             }
         }
     }
+
+    pub const fn surrounding_tokens(&self) -> SimpleBlockSurroundingTokens<'a> {
+        self.surrounding
+    }
+
+    pub const fn value_as_original_str(&self) -> &'a str {
+        self.value.full.to_str()
+    }
 }
 
 impl<'a> ComponentValue<'a> {
-    /// Panics if `input` is empty.
-    ///
     /// https://drafts.csswg.org/css-syntax-3/#consume-list-of-components
     const fn try_consume_one(
         tar: TokenAndRemaining<'a, Token<'a>>,
@@ -684,9 +700,13 @@ impl<'a> Iterator for ComponentValueParseList<'a> {
 // https://test.csswg.org/suites/css21_dev/20110323/html4/chapter-4.html
 #[cfg(test)]
 mod tests {
-    use crate::{parse::component_value::ComponentValueParseList, token::stream::TokenStream};
+    use crate::{
+        collections::array_vec::ArrayVec,
+        parse::component_value::ComponentValueParseList,
+        token::{stream::TokenStream, tokens::Token},
+    };
 
-    use super::ComponentValue;
+    use super::{ComponentValue, Function};
 
     const TEST: () = {
         let input = TokenStream::new("");
@@ -702,5 +722,34 @@ mod tests {
     #[test]
     fn test() {
         () = TEST
+    }
+
+    #[test]
+    fn function() {
+        let (res, remaining) =
+            Function::consume(TokenStream::new("rgba()").try_process().unwrap()).unwrap();
+        assert!(remaining.is_empty());
+
+        assert_eq!(res.value_as_original_str(), "");
+        assert_eq!(res.full.to_str(), "rgba()");
+    }
+
+    #[test]
+    fn functions() {
+        let res = ComponentValue::parse_list_from_str("rgba0() rgba()")
+            .try_collect_into_known::<ArrayVec<_, 3>, 3, 0>()
+            .unwrap();
+
+        let res = res.as_known_parsed_value_list();
+        assert_eq!(res.full_as_str(), "rgba0() rgba()");
+        //    assert_eq!( res.as_slice(),[]);
+        assert!(matches!(
+            res.as_slice(),
+            [
+                ComponentValue::Function(_),
+                ComponentValue::PreservedTokens(Token::Whitespace(_)),
+                ComponentValue::Function(_),
+            ]
+        ));
     }
 }
