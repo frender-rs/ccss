@@ -249,8 +249,9 @@ impl<const N: usize> FilteredCharVec<N> {
 
     pub const fn fit_or_keep_first_n<const M: usize>(self) -> FilteredCharVec<M> {
         let mut res = FilteredCharVec::EMPTY;
-        while res.len < M {
-            res.array[res.len] = self.array[res.len];
+        let this = self.as_char_slice();
+        while res.len < M && res.len < this.len() {
+            res.array[res.len] = this[res.len];
             res.len += 1;
         }
 
@@ -313,4 +314,21 @@ impl<'a> FilteredCharSlice<'a> {
     pub const fn to_char_slice(self) -> &'a [char] {
         self.inner
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Filtered;
+
+    const _: () = {
+        let chars = Filtered::new("\\").first_n_code_points::<3>();
+        assert!(matches!(chars.as_char_slice(), ['\\']));
+
+        assert!(matches!(chars.crop_and_fit::<2>(1).as_char_slice(), []));
+
+        assert!(matches!(
+            chars.fit_or_keep_first_n::<2>().as_char_slice(),
+            ['\\']
+        ));
+    };
 }
