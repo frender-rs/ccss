@@ -109,7 +109,7 @@ impl<'a> StringToken<'a> {
                         });
                     }
                     REVERSE_SOLIDUS => {
-                        match EscapedCodePoint::consume(new_stream.copy()) {
+                        match EscapedCodePoint::consume_after_reverse_solidus(new_stream.copy()) {
                             Ok((None, new_stream)) => {
                                 // LF
                                 has_filtered_chars_or_escaped_code_points = true;
@@ -185,7 +185,7 @@ impl<'a> Chars<'a> {
                         unreachable!()
                     }
                     REVERSE_SOLIDUS => {
-                        match EscapedCodePoint::consume(new_stream.copy()) {
+                        match EscapedCodePoint::consume_after_reverse_solidus(new_stream.copy()) {
                             Ok((None, new_stream)) => {
                                 // LF
                                 // consume it but don't append it to <string-token>'s value

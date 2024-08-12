@@ -151,7 +151,7 @@ impl<'a> UrlToken<'a> {
                             remaining: new_stream,
                         });
                     }
-                    REVERSE_SOLIDUS => match EscapedCodePoint::consume(new_stream) {
+                    REVERSE_SOLIDUS => match EscapedCodePoint::consume_after_reverse_solidus(new_stream) {
                         Ok((Some(_), new_stream)) => {
                             stream = new_stream;
                         }
