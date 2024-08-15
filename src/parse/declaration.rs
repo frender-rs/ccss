@@ -425,10 +425,7 @@ where
                         reason,
                     ));
                 }
-                Err(err) => match err {
-                    ListParseFullError::ComponentValue(_) => todo!(),
-                    ListParseFullError::UnexpectedRightCurlyBracket(_, _) => todo!(),
-                },
+                Err(err) => return Err(ConsumeAfterNameErrorFull::ComponentValueList(err)),
             }
         }
     }
