@@ -354,13 +354,48 @@ where
             }
             Err(err) => return Err(ConsumeAfterNameErrorFull::Token(err)),
         };
-        let after_colon = input.tokens_and_remaining_to_copyable();
 
         let input = match input.try_discard_whitespace() {
             Ok(v) => v,
             Err(err) => return Err(ConsumeAfterNameErrorFull::Token(err)),
         };
 
+        let (
+            BuildOutput {
+                value,
+                important,
+                value_and_important,
+                after_value_and_important,
+                after_value_and_important_and_trailing_whitespace: _,
+            },
+            reason,
+        ) = match Self::try_consume_value_and_important(input) {
+            Ok(v) => v,
+            Err(err) => {
+                return Err(err);
+            }
+        };
+
+        Ok((
+            Self {
+                full: before_name.to_copyable().before(after_value_and_important),
+                name,
+                colon,
+                value_and_important,
+                value,
+                important,
+            },
+            reason,
+        ))
+    }
+
+    const fn try_consume_value_and_important<Nested: NestedConfig>(
+        input: TokenStreamProcess<'a>,
+    ) -> Result<
+        (BuildOutput<'a, L>, ParseEndReasonFull<'a, Nested>),
+        ConsumeAfterNameErrorFull<'a, Nested>,
+    > {
+        let before_value = input.tokens_and_remaining_to_copyable();
         let mut input = input;
 
         let mut values_builder = KnownDeclarationValueList::<L>::start_builder();
@@ -405,25 +440,7 @@ where
                         NextFull::Eof(_) => ParseEndReasonFull::Eof,
                     };
 
-                    let BuildOutput {
-                        value,
-                        important,
-                        value_and_important,
-                        after_value_and_important,
-                        after_value_and_important_and_trailing_whitespace: _,
-                    } = values_builder.build(after_colon);
-
-                    return Ok((
-                        Self {
-                            full: before_name.to_copyable().before(after_value_and_important),
-                            name,
-                            colon,
-                            value_and_important,
-                            value,
-                            important,
-                        },
-                        reason,
-                    ));
+                    return Ok((values_builder.build(before_value), reason));
                 }
                 Err(err) => return Err(ConsumeAfterNameErrorFull::ComponentValueList(err)),
             }
