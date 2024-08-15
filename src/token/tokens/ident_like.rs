@@ -151,19 +151,21 @@ impl<'a> UrlToken<'a> {
                             remaining: new_stream,
                         });
                     }
-                    REVERSE_SOLIDUS => match EscapedCodePoint::consume_after_reverse_solidus(new_stream) {
-                        Ok((Some(_), new_stream)) => {
-                            stream = new_stream;
+                    REVERSE_SOLIDUS => {
+                        match EscapedCodePoint::consume_after_reverse_solidus(new_stream) {
+                            Ok((Some(_), new_stream)) => {
+                                stream = new_stream;
+                            }
+                            Ok((None, _)) => {
+                                // a REVERSE_SOLIDUS followed by LF
+                                return Err(UrlParseError::BadUrl { remaining: old });
+                            }
+                            Err(Eof) => {
+                                // a REVERSE_SOLIDUS followed by EOF
+                                return Err(UrlParseError::BadUrl { remaining: old });
+                            }
                         }
-                        Ok((None, _)) => {
-                            // a REVERSE_SOLIDUS followed by LF
-                            return Err(UrlParseError::BadUrl { remaining: old });
-                        }
-                        Err(Eof) => {
-                            // a REVERSE_SOLIDUS followed by EOF
-                            return Err(UrlParseError::BadUrl { remaining: old });
-                        }
-                    },
+                    }
                     _ => stream = new_stream,
                 },
                 None => return Err(UrlParseError::Eof),

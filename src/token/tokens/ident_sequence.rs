@@ -52,7 +52,9 @@ impl<'a> Chars<'a> {
             let (c, new_stream) = match fc.to_char() {
                 u if is_ident_code_point(u) => (u, new_stream),
                 REVERSE_SOLIDUS => {
-                    if let Ok((Some(e), new_stream)) = EscapedCodePoint::consume_after_reverse_solidus(new_stream) {
+                    if let Ok((Some(e), new_stream)) =
+                        EscapedCodePoint::consume_after_reverse_solidus(new_stream)
+                    {
                         (e.to_code_point(), new_stream)
                     } else {
                         // LF | EOF
@@ -156,7 +158,9 @@ impl<'a> IdentSequence<'a> {
                     remaining = new_stream;
                 }
                 REVERSE_SOLIDUS => {
-                    if let Ok((Some(e), new_stream)) = EscapedCodePoint::consume_after_reverse_solidus(new_stream) {
+                    if let Ok((Some(e), new_stream)) =
+                        EscapedCodePoint::consume_after_reverse_solidus(new_stream)
+                    {
                         has_filtered_chars_or_escaped_code_points = true;
                         let _ = e;
                         remaining = new_stream;
