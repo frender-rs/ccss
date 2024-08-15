@@ -48,6 +48,11 @@ impl<'a> IdentToken<'a> {
     pub(crate) const fn as_ident_sequence(&self) -> IdentSequence<'a> {
         self.0
     }
+
+    /// The returned str may contain [escaped code points](https://drafts.csswg.org/css-syntax-3/#consume-escaped-code-point).
+    pub const fn original_str(&self) -> &'a str {
+        self.0.original_str()
+    }
 }
 
 #[cfg(feature = "alloc")]
