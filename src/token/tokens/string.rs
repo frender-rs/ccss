@@ -34,6 +34,15 @@ pub enum StringTokenParseError<'a> {
     },
 }
 
+impl<'a> StringTokenParseError<'a> {
+    pub(crate) const fn to_message(&self) -> &'static str {
+        match self {
+            StringTokenParseError::Eof { .. } => "unexpected eof when parsing string token",
+            StringTokenParseError::Newline { .. } => "unexpected newline when parsing string token",
+        }
+    }
+}
+
 impl<'a> StringToken<'a> {
     /// Unlike [`Self::consume_after_starting_code_point`], this method assumes that the starting code point hasn't been consumed yet.
     ///

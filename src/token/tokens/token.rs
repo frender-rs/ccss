@@ -106,6 +106,12 @@ pub struct UnexpectedReverseSolidusError<'a> {
     stream: Filtered<'a>,
 }
 
+impl UnexpectedReverseSolidusError<'_> {
+    const fn to_message(&self) -> &'static str {
+        "unexpected reverse solidus '\\'"
+    }
+}
+
 #[derive(Debug)]
 pub enum TokenParseError<'a> {
     StringToken(StringTokenParseError<'a>),
@@ -115,6 +121,14 @@ pub enum TokenParseError<'a> {
 
 impl<'a> TokenParseError<'a> {
     pub(crate) const DUMMY: Self = Self::Url(UrlParseError::Eof);
+
+    pub(crate) const fn to_message(self) -> &'static str {
+        match self {
+            TokenParseError::StringToken(err) => err.to_message(),
+            TokenParseError::Url(err) => err.to_message(),
+            TokenParseError::UnexpectedReverseSolidus(err) => err.to_message(),
+        }
+    }
 }
 
 pub enum TokenParseOutput<'a> {

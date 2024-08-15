@@ -111,6 +111,15 @@ pub enum UrlParseError<'a> {
     Eof,
 }
 
+impl UrlParseError<'_> {
+    pub(crate) const fn to_message(&self) -> &'static str {
+        match self {
+            UrlParseError::BadUrl { .. } => "invalid url",
+            UrlParseError::Eof => "unexpected eof when parsing url",
+        }
+    }
+}
+
 impl<'a> UrlToken<'a> {
     /// This algorithm assumes that the initial "url(" has already been consumed.
     /// This algorithm also assumes that it’s being called to consume an "unquoted" value, like url(foo).

@@ -355,11 +355,6 @@ where
             Err(err) => return Err(ConsumeAfterNameErrorFull::Token(err)),
         };
 
-        let input = match input.try_discard_whitespace() {
-            Ok(v) => v,
-            Err(err) => return Err(ConsumeAfterNameErrorFull::Token(err)),
-        };
-
         let (
             BuildOutput {
                 value,
@@ -389,12 +384,18 @@ where
         ))
     }
 
+    /// Whitespace will be trimmed
     const fn try_consume_value_and_important<Nested: NestedConfig>(
         input: TokenStreamProcess<'a>,
     ) -> Result<
         (BuildOutput<'a, L>, ParseEndReasonFull<'a, Nested>),
         ConsumeAfterNameErrorFull<'a, Nested>,
     > {
+        let input = match input.try_discard_whitespace() {
+            Ok(v) => v,
+            Err(err) => return Err(ConsumeAfterNameErrorFull::Token(err)),
+        };
+
         let before_value = input.tokens_and_remaining_to_copyable();
         let mut input = input;
 
@@ -445,6 +446,61 @@ where
                 Err(err) => return Err(ConsumeAfterNameErrorFull::ComponentValueList(err)),
             }
         }
+    }
+
+    /// Panics if `s` if not a valid [KnownDeclarationValueList].
+    ///
+    /// Whitespace will be trimmed.
+    pub const fn parse_value_from_str(s: &'a str) -> KnownDeclarationValueList<'a, L> {
+        let input = TokenStream::new(s);
+
+        let input = match input.try_process() {
+            Ok(v) => v,
+            Err(err) => panic!("{}", err.to_message()),
+        };
+
+        let (out, reason) = match Self::try_consume_value_and_important::<NestedFalse>(input) {
+            Ok(v) => v,
+            Err(err) => {
+                let msg = match err {
+                    ConsumeAfterNameErrorFull::ExpectColon { .. } => {
+                        unreachable!()
+                    }
+                    ConsumeAfterNameErrorFull::ComponentValueList(err) => match err {
+                        ListParseFullError::ComponentValue(err) => match err {
+                            ComponentValueParseOrTokenError::Eof => {
+                                "unexpected eof when parsing component value list"
+                            }
+                            ComponentValueParseOrTokenError::Token(err) => err.to_message(),
+                        },
+                        ListParseFullError::UnexpectedRightCurlyBracket(_, ()) => {
+                            "unexpected right curly bracket '}' when parsing component value list"
+                        }
+                    },
+                };
+                panic!("{}", msg);
+            }
+        };
+
+        match reason {
+            ParseEndReasonFull::NextIsRightCurlyBracket(_, never) => match never {},
+            ParseEndReasonFull::NextIsStopToken(_) => panic!("unexpected semicolon ';'"),
+            ParseEndReasonFull::Eof => {}
+        }
+
+        let BuildOutput {
+            value,
+            important,
+            value_and_important: _,
+            after_value_and_important: _,
+            after_value_and_important_and_trailing_whitespace: _,
+        } = out;
+
+        if important.is_some() {
+            panic!("declaration value can't end with \"!important\"")
+        }
+
+        value
     }
 }
 
