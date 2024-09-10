@@ -107,7 +107,7 @@ pub(crate) mod builder {
             parsed_value_list::{KnownParsedValueList, KnownParsedValueListBuilder},
         },
         parse::component_value::ComponentValue,
-        token::{stream::CopyableTokenStream, tokens::WhitespaceToken},
+        token::stream::CopyableTokenStream,
     };
 
     use super::{
@@ -123,11 +123,6 @@ pub(crate) mod builder {
 
     pub(crate) struct KnownComponentValueListBuilder<'a, V: IsKnownComponentValueList<'a>> {
         value_list_builder: KnownParsedValueListBuilder<'a, V::Collection, ComponentValue<'a>>,
-    }
-
-    struct WhitespaceTokenAndRemaining<'a> {
-        token: WhitespaceToken<'a>,
-        token_and_remaining: CopyableTokenStream<'a>,
     }
 
     impl<
