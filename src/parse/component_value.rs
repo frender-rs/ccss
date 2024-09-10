@@ -46,20 +46,25 @@ pub(crate) struct List<'a> {
     pub len: usize,
 }
 
-impl<'a> List<'a> {
-    pub const EMPTY: Self = Self {
-        full: TokenStream::EMPTY.to_copyable(),
-        len: 0,
-    };
-}
-
 impl<'a> Function<'a> {
+    pub const fn full_as_original_str(&self) -> &'a str {
+        self.full.to_str()
+    }
+
     pub const fn name(&self) -> IdentSequence<'a> {
         self.function_token.value()
     }
 
     pub const fn value_as_original_str(&self) -> &'a str {
         self.value.full.to_str()
+    }
+
+    pub const fn value_count(&self) -> usize {
+        self.value.len
+    }
+
+    pub const fn right_parenthesis(&self) -> RightParenthesis {
+        self.right_parenthesis
     }
 
     const fn consume(
@@ -218,6 +223,10 @@ impl<'a> SimpleBlock<'a> {
                 }
             }
         }
+    }
+
+    pub const fn full_as_original_str(&self) -> &'a str {
+        self.full.to_str()
     }
 
     pub const fn surrounding_tokens(&self) -> SimpleBlockSurroundingTokens<'a> {
