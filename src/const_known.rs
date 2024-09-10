@@ -1,6 +1,3 @@
-// mod macros;
-// pub use macros::{__private, auto_fns};
-
 mod sealed {
     pub trait SealedYesOrNo {}
 }
