@@ -509,12 +509,12 @@ impl<'a, L: IsKnownComponentValueList<'a>> Declaration<'a, L> {
         self.full.to_str()
     }
 
-    pub fn name(&self) -> IdentToken<'a> {
+    pub const fn name(&self) -> IdentToken<'a> {
         self.name
     }
 
     /// The returned str may contain [escaped code points](https://drafts.csswg.org/css-syntax-3/#consume-escaped-code-point).
-    pub fn name_as_original_str(&self) -> &'a str {
+    pub const fn name_as_original_str(&self) -> &'a str {
         self.name.as_ident_sequence().original_str()
     }
 
@@ -523,11 +523,11 @@ impl<'a, L: IsKnownComponentValueList<'a>> Declaration<'a, L> {
     }
 
     /// The returned str may contain [escaped code points](https://drafts.csswg.org/css-syntax-3/#consume-escaped-code-point).
-    pub fn value_as_original_str(&self) -> &'a str {
+    pub const fn value_as_original_str(&self) -> &'a str {
         self.value.full_as_str()
     }
 
-    pub fn is_important(&self) -> bool {
+    pub const fn is_important(&self) -> bool {
         self.important.is_some()
     }
 
