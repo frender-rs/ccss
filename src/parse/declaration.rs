@@ -361,7 +361,7 @@ where
                 important,
                 value_and_important,
                 after_value_and_important,
-                after_value_and_important_and_trailing_whitespace: _,
+                // after_value_and_important_and_trailing_whitespace: _,
             },
             reason,
         ) = match Self::try_consume_value_and_important(input) {
@@ -493,7 +493,7 @@ where
             important,
             value_and_important: _,
             after_value_and_important: _,
-            after_value_and_important_and_trailing_whitespace: _,
+            // after_value_and_important_and_trailing_whitespace: _,
         } = out;
 
         if important.is_some() {

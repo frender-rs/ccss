@@ -634,11 +634,11 @@ pub(crate) mod builder {
             };
 
             // after values and !important
-            let after_value_and_important_and_trailing_whitespace =
-                match self.value_list.last_maybe_whitespace() {
-                    Some(v) => v.remaining,
-                    None => after_colon,
-                };
+            // let after_value_and_important_and_trailing_whitespace =
+            //     match self.value_list.last_maybe_whitespace() {
+            //         Some(v) => v.remaining,
+            //         None => after_colon,
+            //     };
 
             let value_and_important = match self
                 .value_list
@@ -695,7 +695,7 @@ pub(crate) mod builder {
                 important,
                 value_and_important,
                 after_value_and_important,
-                after_value_and_important_and_trailing_whitespace,
+                // after_value_and_important_and_trailing_whitespace,
             }
         }
     }
@@ -705,6 +705,6 @@ pub(crate) mod builder {
         pub(crate) important: Option<Important<'a>>,
         pub(crate) value_and_important: CopyableTokenStream<'a>,
         pub(crate) after_value_and_important: CopyableTokenStream<'a>,
-        pub(crate) after_value_and_important_and_trailing_whitespace: CopyableTokenStream<'a>,
+        // pub(crate) after_value_and_important_and_trailing_whitespace: CopyableTokenStream<'a>,
     }
 }
