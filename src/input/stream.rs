@@ -2,7 +2,7 @@
 
 use konst::{string::Chars, try_opt};
 
-use super::code_points::{self, CR, FF, LF};
+use super::code_points::{CR, FF, LF};
 
 /// https://drafts.csswg.org/css-syntax-3/#css-filter-code-points
 pub struct Filtered<'a>(pub Chars<'a>);
@@ -41,14 +41,6 @@ impl FilteredChar {
     /// https://drafts.csswg.org/css-syntax-3/#non-printable-code-point
     pub(crate) const fn is_non_printable(&self) -> bool {
         matches!(self.0, '\u{0000}'..='\u{0008}' | '\u{000B}' | '\u{000E}'..='\u{001F}' | '\u{007F}')
-    }
-
-    pub(crate) const REPLACEMENT_CHARACTER: Self = Self(char::REPLACEMENT_CHARACTER);
-
-    pub(crate) const fn from_char(c: char) -> Self {
-        assert!(!matches!(c, code_points::CR | code_points::FF | '\0'));
-
-        Self(c)
     }
 }
 
