@@ -2,10 +2,10 @@
 
 use std::borrow::Cow;
 
-use ccss::{collections::array_vec::ArrayVec, parse::declaration::DeclarationParseListError};
+use ccss::parse::declaration::DeclarationParseListError;
 use util::{error::MaybeError, TestSuite, TestSuites};
 
-mod util;
+pub mod util;
 
 type Expected<S> = MaybeError<util::declaration::Declaration<S>, S>;
 

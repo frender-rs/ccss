@@ -1,25 +1,18 @@
 #![cfg(feature = "alloc")]
 
-use std::{
-    borrow::Cow,
-    collections::{hash_map, HashMap, HashSet},
-};
+use std::{borrow::Cow, collections::HashMap};
 
 use ccss::{
-    collections::{array_vec::ArrayVec, parsed_value_list::KnownParsedValueList},
-    parse::{
-        component_value::{ComponentValue as ParsedComponentValue, ListParseNotNestedError},
-        declaration::{Declaration, DeclarationParseListError},
-    },
+    collections::array_vec::ArrayVec,
+    parse::component_value::{ComponentValue as ParsedComponentValue, ListParseNotNestedError},
 };
 use util::{
     component_value::ComponentValue,
-    declaration_rule_list::DeclarationRule,
     error::{Error, MaybeError},
     TestSuite, TestSuites,
 };
 
-mod util;
+pub mod util;
 
 type Expected<S> = MaybeError<ComponentValue<S>, S>;
 
@@ -52,11 +45,7 @@ fn test_all() {
     let mut tests_as_error =
         HashMap::<&str, bool>::from_iter(TESTS_AS_ERROR.iter().map(|v| (*v, false)));
 
-    for TestSuite {
-        input,
-        mut expected,
-    } in test_suites.0
-    {
+    for TestSuite { input, expected } in test_suites.0 {
         if input.contains("/*") && input.contains("*/") {
             // TODO: comments are not supported yet
             continue;

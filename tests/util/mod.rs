@@ -237,7 +237,7 @@ pub mod component_value {
         // rest
         R,
     > {
-        literal: L,
+        _literal: L,
         representation: S,
         rest: R,
     }
@@ -245,7 +245,7 @@ pub mod component_value {
     impl<L, S, R> From<SeqFlatten<(L, S), R>> for NumericRaw<L, S, R> {
         fn from(SeqFlatten((literal, representation), rest): SeqFlatten<(L, S), R>) -> Self {
             Self {
-                literal,
+                _literal: literal,
                 representation,
                 rest,
             }
@@ -332,7 +332,7 @@ pub mod component_value {
     impl<S> From<NumericRaw<NumberLiteral, S, NumberValue>> for Number<S> {
         fn from(
             NumericRaw {
-                literal: _,
+                _literal: _,
                 representation,
                 rest: value,
             }: NumericRaw<NumberLiteral, S, NumberValue>,
@@ -397,7 +397,7 @@ pub mod component_value {
     impl<S> From<NumericRaw<PercentageLiteral, S, NumberValue>> for Percentage<S> {
         fn from(
             NumericRaw {
-                literal: _,
+                _literal: _,
                 representation,
                 rest: value,
             }: NumericRaw<PercentageLiteral, S, NumberValue>,
@@ -431,7 +431,7 @@ pub mod component_value {
     impl<S> From<NumericRaw<DimensionLiteral, S, SeqFlatten<NumberValue, (S,)>>> for Dimension<S> {
         fn from(
             NumericRaw {
-                literal: _,
+                _literal: _,
                 representation,
                 rest: SeqFlatten(value, (unit,)),
             }: NumericRaw<DimensionLiteral, S, SeqFlatten<NumberValue, (S,)>>,
@@ -677,7 +677,7 @@ pub mod component_value {
             this.into_iter().flat_map(Self::normalize)
         }
 
-        pub(crate) fn normalize_list(this: impl IntoIterator<Item = Self>) -> Vec<Self> {
+        pub fn normalize_list(this: impl IntoIterator<Item = Self>) -> Vec<Self> {
             Self::into_iter_normalize(this).collect()
         }
 
@@ -696,7 +696,7 @@ pub mod component_value {
             Ok(())
         }
 
-        pub(crate) fn confirm_ok(mut self) -> Result<Self, Error<S>> {
+        pub fn confirm_ok(mut self) -> Result<Self, Error<S>> {
             Ok(match self {
                 ComponentValue::Typed(t, reason) if t.as_ref() == "error" => {
                     return Err(Error { reason })
@@ -715,7 +715,7 @@ pub mod component_value {
     }
 
     impl<S> ComponentValue<S> {
-        pub(crate) fn map_str<SS>(self, mut f: impl FnMut(S) -> SS) -> ComponentValue<SS> {
+        pub fn map_str<SS>(self, mut f: impl FnMut(S) -> SS) -> ComponentValue<SS> {
             self.map_str_by_mut(&mut f)
         }
 
@@ -742,11 +742,11 @@ pub mod component_value {
         ///
         /// [`Whitespace`]: ComponentValue::Whitespace
         #[must_use]
-        pub(crate) const fn is_whitespace(&self) -> bool {
+        pub const fn is_whitespace(&self) -> bool {
             matches!(self, Self::Whitespace(..))
         }
 
-        pub(crate) fn has_error(&self) -> bool
+        pub fn has_error(&self) -> bool
         where
             S: AsRef<str>,
         {
@@ -804,7 +804,7 @@ pub mod component_value {
                         IdentLikeToken::Function(_) => todo!(),
                         IdentLikeToken::Url(_) => todo!(),
                     },
-                    Token::Cdc(t) => Self::PreservedTokens(PreservedTokens("-->".into())),
+                    Token::Cdc(_) => Self::PreservedTokens(PreservedTokens("-->".into())),
                     Token::Cdo(_) => todo!(),
                     Token::AtKeyword(t) => Self::AtKeyword(AtKeyword {
                         value: t.value().unescape(),
@@ -924,7 +924,7 @@ pub mod declaration {
     >;
 
     impl<S> Declaration<S> {
-        pub(crate) fn from_parsed<'a, const CAP: usize>(parsed: Parsed<'a, CAP>) -> Self
+        pub fn from_parsed<'a, const CAP: usize>(parsed: Parsed<'a, CAP>) -> Self
         where
             S: From<&'a str>,
             S: From<std::borrow::Cow<'a, str>>,
@@ -944,9 +944,7 @@ pub mod declaration {
     }
 
     impl<S> From<DeclarationRaw<S>> for Declaration<S> {
-        fn from(
-            DeclarationRaw(DeclarationLiteral, name, value, important): DeclarationRaw<S>,
-        ) -> Self {
+        fn from(DeclarationRaw(_, name, value, important): DeclarationRaw<S>) -> Self {
             Self {
                 name,
                 value,
@@ -1086,7 +1084,7 @@ pub struct TestSuite<T, E> {
 pub struct TestSuites<T, E>(pub Vec<TestSuite<T, E>>);
 
 impl<T, E> TestSuites<T, E> {
-    pub(crate) fn with_append(mut self, mut tests: Self) -> Self {
+    pub fn with_append(mut self, mut tests: Self) -> Self {
         self.0.append(&mut tests.0);
         self
     }

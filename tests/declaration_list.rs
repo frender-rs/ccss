@@ -11,7 +11,7 @@ use ccss::{
 };
 use util::{declaration_rule_list::DeclarationRule, error::MaybeError, TestSuite, TestSuites};
 
-mod util;
+pub mod util;
 
 type Expected<S> = MaybeError<DeclarationRule<S>, S>;
 
