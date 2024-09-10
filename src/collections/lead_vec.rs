@@ -53,7 +53,7 @@ impl<T, const CAP: usize> LeadVec<T, CAP> {
                 (self, None)
             }
             Err((lead, value)) => {
-                self.lead = lead;
+                self.lead = ArrayVec::new_filled(lead);
                 self.tail_len += 1;
                 (self, Some(value))
             }
