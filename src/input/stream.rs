@@ -2,7 +2,7 @@
 
 use konst::{string::Chars, try_opt};
 
-use super::code_points::{self, LF};
+use super::code_points::{self, CR, LF};
 
 /// https://drafts.csswg.org/css-syntax-3/#css-filter-code-points
 pub struct Filtered<'a>(pub Chars<'a>);
@@ -105,7 +105,6 @@ impl Filtered<'_> {
     }
     pub const fn next(self) -> Option<(FilteredChar, Self)> {
         if let Some((u, this)) = self.0.next() {
-            const CR: char = '\u{000D}';
             let u = match u {
                 // U+000C FORM FEED (FF)
                 '\u{000C}' => LF,
@@ -134,7 +133,6 @@ impl Filtered<'_> {
     /// The `bool` is true if there are char(s) filtered.
     pub(crate) const fn next_and_report(self) -> Option<(FilteredChar, bool, Self)> {
         if let Some((u, this)) = self.0.next() {
-            const CR: char = '\u{000D}';
             let (u, is_filtered) = match u {
                 // U+000C FORM FEED (FF)
                 '\u{000C}' => (LF, true),
