@@ -71,6 +71,12 @@ impl<'a, T: Copy, const CAP: usize> KnownParsedValueList<'a, ArrayVec<T, CAP>, T
     }
 }
 
+impl<'a, T: Copy> KnownParsedValueList<'a, super::count::Count, T> {
+    pub const fn count(&self) -> usize {
+        self.parsed.as_variant().len
+    }
+}
+
 pub(crate) enum KnownParsedValueListBuilder<'a, L: IsKnownCollection<T>, T: Copy> {
     Empty,
     AllParsed {
