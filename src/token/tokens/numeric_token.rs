@@ -112,6 +112,7 @@ impl<'a> Number<'a> {
         )
     }
 
+    #[cfg(test)]
     pub(crate) const fn new(full: &'a str) -> Self {
         let (this, remaining) = Self::consume(Filtered::new(full));
         match this {
@@ -123,6 +124,7 @@ impl<'a> Number<'a> {
         }
     }
 
+    #[cfg(test)]
     pub(crate) const fn new_integer(full: &'a str) -> Self {
         let this = Self::new(full);
         assert!(matches!(this.kind, NumberKind::Integer), "not an integer");

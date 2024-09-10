@@ -20,6 +20,7 @@ impl<'a> WhitespaceToken<'a> {
         (v, new_stream)
     }
 
+    #[cfg(test)]
     pub(crate) const fn new(s: &'a str) -> Self {
         let (this, stream) = Self::consume(Filtered::new(s));
 
