@@ -677,11 +677,6 @@ impl NestedConfig for NestedFalse {
     > = Err(());
 }
 
-enum StopToken<'a> {
-    Comma(Comma<'a>),
-    Semicolon(Semicolon<'a>),
-}
-
 pub(crate) enum StopTokenWithConfig<'a, StopToken: StopTokenConfig> {
     Comma(Comma<'a>, StopToken::IsComma),
     Semicolon(Semicolon<'a>, StopToken::IsSemicolon),

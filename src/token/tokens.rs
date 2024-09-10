@@ -1,3 +1,5 @@
+#![allow(dead_code)] // TODO: remove me
+
 mod whitespace;
 pub use whitespace::{Whitespace, WhitespaceToken};
 

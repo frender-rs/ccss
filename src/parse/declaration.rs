@@ -171,6 +171,7 @@ pub enum ParseEndReason<'a> {
 }
 
 impl<'a, Nested: NestedConfig> DeclarationParseErrorFull<'a, Nested> {
+    #[allow(non_snake_case)]
     const fn Token(err: TokenParseError<'a>) -> Self {
         Self::ComponentValueList(ListParseFullError::ComponentValue(
             ComponentValueParseOrTokenError::Token(err),
@@ -179,6 +180,7 @@ impl<'a, Nested: NestedConfig> DeclarationParseErrorFull<'a, Nested> {
 }
 
 impl<'a, Nested: NestedConfig> ConsumeAfterNameErrorFull<'a, Nested> {
+    #[allow(non_snake_case)]
     const fn Token(err: TokenParseError<'a>) -> Self {
         Self::ComponentValueList(ListParseFullError::ComponentValue(
             ComponentValueParseOrTokenError::Token(err),
