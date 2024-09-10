@@ -518,6 +518,10 @@ impl<'a, L: IsKnownComponentValueList<'a>> Declaration<'a, L> {
         self.name.as_ident_sequence().original_str()
     }
 
+    pub const fn value(&self) -> &KnownDeclarationValueList<'a, L> {
+        &self.value
+    }
+
     /// The returned str may contain [escaped code points](https://drafts.csswg.org/css-syntax-3/#consume-escaped-code-point).
     pub fn value_as_original_str(&self) -> &'a str {
         self.value.full_as_str()
