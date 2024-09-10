@@ -137,21 +137,6 @@ pub(crate) mod builder {
     }
 
     impl<'a> WhitespaceAndValueAndRemaining<'a> {
-        const fn into_tokens(self) -> (Option<ValueAndRemaining<'a>>, ValueAndRemaining<'a>) {
-            (
-                if let Some(w) = self.whitespace {
-                    Some(ValueAndRemaining {
-                        cv: value_of_whitespace(w.whitespace),
-                        remaining: self.value.full,
-                        full: w.whitespace_and_remaining,
-                    })
-                } else {
-                    None
-                },
-                self.value,
-            )
-        }
-
         const fn push_to<
             L: IsKnownComponentValueListWithConstEmpty<'a>,
             const ARRAY_VEC_CAP: usize,
