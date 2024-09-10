@@ -43,7 +43,7 @@ impl<T, const CAP: usize> ArrayVec<T, CAP> {
         }
     }
 
-    pub const fn with_try_push(mut self, value: T) -> Result<Self, (Self, T)>
+    pub const fn with_try_push(mut self, value: T) -> Result<Self, ([T; CAP], T)>
     where
         T: Copy,
     {
@@ -52,7 +52,7 @@ impl<T, const CAP: usize> ArrayVec<T, CAP> {
             self.len += 1;
             Ok(self)
         } else {
-            Err((self, value))
+            Err((self.array, value))
         }
     }
 
