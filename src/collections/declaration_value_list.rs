@@ -107,13 +107,6 @@ pub(crate) mod builder {
                 whitespace_and_remaining: self.full,
             }
         }
-        const fn into_component_value_and_remaining(self) -> ValueAndRemaining<'a> {
-            ValueAndRemaining {
-                cv: value_of_whitespace(self.cv),
-                remaining: self.remaining,
-                full: self.full,
-            }
-        }
     }
 
     impl<'a> HasConstDummyValue for ValueAndRemaining<'a> {
@@ -190,47 +183,21 @@ pub(crate) mod builder {
         Empty,
         One(ValueAndRemaining<'a>),
         More {
-            first: ValueAndRemaining<'a>,
+            // first: ValueAndRemaining<'a>,
             last: ValueAndRemaining<'a>,
-            real_len: usize,
+            // real_len: usize,
         },
     }
 
-    struct Span<'a> {
-        full: CopyableTokenStream<'a>,
-        len: usize,
-    }
-
     impl<'a> ValueListPop2<'a> {
-        const fn span(&self) -> Span<'a> {
-            match self {
-                ValueListPop2::Empty => Span {
-                    full: CopyableTokenStream::EMPTY,
-                    len: 0,
-                },
-                ValueListPop2::One(v) => Span {
-                    full: v.full.before(v.remaining),
-                    len: 1,
-                },
-                ValueListPop2::More {
-                    first,
-                    last,
-                    real_len,
-                } => Span {
-                    full: first.full.before(last.remaining),
-                    len: *real_len,
-                },
-            }
-        }
-
         const fn last(&self) -> Option<&ValueAndRemaining<'a>> {
             match self {
                 ValueListPop2::Empty => None,
                 ValueListPop2::One(var) => Some(var),
                 ValueListPop2::More {
-                    first: _,
+                    // first: _,
                     last,
-                    real_len: _,
+                    // real_len: _,
                 } => Some(last),
             }
         }
@@ -379,9 +346,9 @@ pub(crate) mod builder {
                                     important,
                                 },
                                 ValueListPop2::More {
-                                    first,
+                                    // first,
                                     last: *a,
-                                    real_len: real_len - 2,
+                                    // real_len: real_len - 2,
                                 },
                             ))
                         } else {
@@ -456,48 +423,6 @@ pub(crate) mod builder {
             }
         }
 
-        const fn last_maybe_whitespace(&self) -> Option<ValueAndRemaining<'a>> {
-            match self {
-                ValueList::Empty => None,
-                ValueList::NotEmpty {
-                    first: _,
-                    last_3: _,
-                    last_whitespace,
-                    real_len: _,
-                } => {
-                    if let Some(last_whitespace) = last_whitespace {
-                        Some((*last_whitespace).into_component_value_and_remaining())
-                    } else {
-                        self.last_non_whitespace()
-                    }
-                }
-            }
-        }
-
-        const fn span_without_trailing_whitespace(&self) -> Span<'a> {
-            match self {
-                ValueList::Empty => Span {
-                    full: CopyableTokenStream::EMPTY,
-                    len: 0,
-                },
-                ValueList::NotEmpty {
-                    first,
-                    last_3,
-                    last_whitespace: _,
-                    real_len,
-                } => match last_3.as_slice().last() {
-                    Some(last) => Span {
-                        full: first.full.before(last.value.remaining),
-                        len: *real_len,
-                    },
-                    None => Span {
-                        full: first.full.before(first.remaining),
-                        len: *real_len,
-                    },
-                },
-            }
-        }
-
         const fn value_including_important_without_trailing_whitespace(
             &self,
         ) -> Option<CopyableTokenStream<'a>> {
@@ -545,18 +470,6 @@ pub(crate) mod builder {
                         _ => unreachable!(),
                     }
                 }
-            }
-        }
-
-        const fn first(&self) -> Option<&ValueAndRemaining<'a>> {
-            match self {
-                ValueList::Empty => None,
-                ValueList::NotEmpty {
-                    first,
-                    last_3: _,
-                    last_whitespace: _,
-                    real_len: _,
-                } => Some(first),
             }
         }
     }
