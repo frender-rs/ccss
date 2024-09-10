@@ -2,7 +2,7 @@
 
 use konst::{string::Chars, try_opt};
 
-use super::code_points::{self, CR, LF};
+use super::code_points::{self, CR, FF, LF};
 
 /// https://drafts.csswg.org/css-syntax-3/#css-filter-code-points
 pub struct Filtered<'a>(pub Chars<'a>);
@@ -107,7 +107,7 @@ impl Filtered<'_> {
         if let Some((u, this)) = self.0.next() {
             let u = match u {
                 // U+000C FORM FEED (FF)
-                '\u{000C}' => LF,
+                FF => LF,
                 // U+000D CARRIAGE RETURN (CR)
                 CR => {
                     if let Some((CR, this)) = this.copy().next() {
@@ -135,7 +135,7 @@ impl Filtered<'_> {
         if let Some((u, this)) = self.0.next() {
             let (u, is_filtered) = match u {
                 // U+000C FORM FEED (FF)
-                '\u{000C}' => (LF, true),
+                FF => (LF, true),
                 // U+000D CARRIAGE RETURN (CR)
                 CR => (
                     if let Some((CR, this)) = this.copy().next() {
