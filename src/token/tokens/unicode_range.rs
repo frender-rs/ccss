@@ -34,14 +34,15 @@ impl<'a> UnicodeRangeToken<'a> {
         let stream = stream.consume_n_code_points::<2>().1;
 
         let (values, mut stream) = HexDigit::consume_at_most_n::<6>(stream);
-        let total = values.len();
+        let mut total = values.len();
         let mut has_question_mark = false;
 
         if total < 6 {
-            while total <= 6 {
+            while total < 6 {
                 let before_next = stream.copy();
                 match stream.next() {
                     Some((fc, new_stream)) if fc.to_char() == '?' => {
+                        total += 1;
                         has_question_mark = true;
                         stream = new_stream;
                     }
