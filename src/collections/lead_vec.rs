@@ -30,6 +30,10 @@ impl<T, const CAP: usize> LeadVec<T, CAP> {
         self.lead.len() + self.tail_len
     }
 
+    pub const fn is_empty(&self) -> bool {
+        self.len() == 0 // self.lead.len() is insufficient if CAP is 0
+    }
+
     pub(crate) const fn with_push(self, value: T) -> Self
     where
         T: Copy,
