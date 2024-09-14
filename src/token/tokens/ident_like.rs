@@ -87,7 +87,7 @@ impl<'a> IdentLikeToken<'a> {
                                     stream,
                                 ));
                             }
-                            Err(err) => return Err(err),
+                            Err(err) => Err(err),
                         }
                     }
                 } else {

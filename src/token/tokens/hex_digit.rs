@@ -2,6 +2,7 @@ use super::hex_digits::HexDigits;
 use crate::input::Filtered;
 
 /// https://drafts.csswg.org/css-syntax-3/#hex-digit
+#[derive(Clone, Copy)]
 pub struct HexDigit(char);
 impl HexDigit {
     pub const fn to_char(self) -> char {
@@ -9,6 +10,7 @@ impl HexDigit {
     }
 
     pub const fn test(u: char) -> bool {
+        #[allow(clippy::match_like_matches_macro)] // for rustfmt
         match u {
             '\u{0030}'..='\u{0039}' | '\u{0041}'..='\u{0046}' | '\u{0061}'..='\u{0066}' => true,
             _ => false,

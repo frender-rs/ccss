@@ -683,6 +683,8 @@ where
         }
     }
 
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::type_complexity)]
     pub const fn try_collect_into_known<
         DL: IsKnownCollectionWithConstEmpty<
             Declaration<'a, VL>,

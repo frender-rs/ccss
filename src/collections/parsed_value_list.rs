@@ -152,6 +152,8 @@ impl<
 
                 let (parsed, fake) = parsed.with_push_maybe_fake(value);
 
+                #[allow(clippy::redundant_pattern_matching)]
+                // cannot borrow here, since the borrowed element may contain interior mutability
                 if matches!(fake, Some(_)) {
                     Self::SomeNotParsed {
                         full_and_remaining: value_and_remaining,
@@ -170,6 +172,9 @@ impl<
                 parsed,
             } => {
                 let (parsed, fake) = parsed.with_push_maybe_fake(value);
+
+                #[allow(clippy::redundant_pattern_matching)]
+                // cannot borrow here, since the borrowed element may contain interior mutability
                 if matches!(fake, Some(_)) {
                     Self::SomeNotParsed {
                         full_and_remaining: parsed_and_remaining,

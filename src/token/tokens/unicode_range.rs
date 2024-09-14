@@ -8,6 +8,7 @@ pub struct UnicodeRangeToken<'a> {
     value: UnicodeRangeTokenValue<'a>,
 }
 
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug, Clone, Copy)]
 pub enum UnicodeRangeTokenValue<'a> {
     WithQuestionMark,
@@ -17,6 +18,7 @@ pub enum UnicodeRangeTokenValue<'a> {
 
 impl<'a> UnicodeRangeToken<'a> {
     pub const fn chars_starts(chars: FilteredCharVec<3>) -> bool {
+        #[allow(clippy::match_like_matches_macro)] // for rustfmt
         match chars.to_chars_padding_zero() {
             ['U' | 'u', '+', c] if c == '?' || HexDigit::test(c) => true,
             _ => false,
@@ -79,7 +81,7 @@ impl<'a> UnicodeRangeToken<'a> {
             (_, stream) = HexDigit::consume_at_most_n::<5>(stream);
 
             let end_of_range = after_consume_1.str_before(&stream);
-            return (
+            (
                 Some(Self {
                     full: original.str_before(&stream),
                     value: UnicodeRangeTokenValue::WithRange {
@@ -88,15 +90,15 @@ impl<'a> UnicodeRangeToken<'a> {
                     },
                 }),
                 stream,
-            );
+            )
         } else {
-            return (
+            (
                 Some(Self {
                     full: start_of_range,
                     value: UnicodeRangeTokenValue::WithOne,
                 }),
                 before_consume_2,
-            );
+            )
         }
     }
 

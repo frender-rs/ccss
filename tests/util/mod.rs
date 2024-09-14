@@ -37,6 +37,12 @@ mod literal {
         }
     }
 
+    impl<C: HasConstLiteral> Default for Literal<C> {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
     impl<'de, C: HasConstLiteral> de::Visitor<'de> for Literal<C> {
         type Value = Self;
 
@@ -1123,7 +1129,7 @@ impl<'de, T: Deserialize<'de>, E: Deserialize<'de>> Deserialize<'de> for TestSui
                     })
                 }
 
-                return Ok(res);
+                Ok(res)
             }
         }
 

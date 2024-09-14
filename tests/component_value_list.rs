@@ -72,7 +72,9 @@ fn test_all() {
             Err(_) => {
                 match res {
                     Ok(res) => panic!("unexpected success: {res:?}\nfor input: {input:?}"),
-                    Err(_) => {}
+                    Err(_) => {
+                        // test passed
+                    }
                 }
                 // TODO: test errors
             }

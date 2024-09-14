@@ -29,8 +29,8 @@ impl<'a> Number<'a> {
         let mut kind = NumberKind::Integer;
         let mut sign = None;
 
-        match stream.copy().next() {
-            Some((fc, new_stream)) => match fc.to_char() {
+        if let Some((fc, new_stream)) = stream.copy().next() {
+            match fc.to_char() {
                 // U+002B PLUS SIGN (+) or U+002D HYPHEN-MINUS (-)
                 '\u{002B}' => {
                     sign = Some(NumberSign::Positive);
@@ -41,8 +41,7 @@ impl<'a> Number<'a> {
                     stream = new_stream;
                 }
                 _ => {}
-            },
-            _ => {}
+            }
         }
 
         let before_consume_digits = stream.copy();

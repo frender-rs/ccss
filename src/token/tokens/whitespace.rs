@@ -1,4 +1,4 @@
-pub use self::whitespace::Whitespace;
+pub use self::whitespace_char::Whitespace;
 
 use crate::input::Filtered;
 
@@ -33,7 +33,7 @@ impl<'a> WhitespaceToken<'a> {
     }
 }
 
-mod whitespace {
+mod whitespace_char {
     use crate::input::{code_points::LF, Filtered};
 
     /// https://drafts.csswg.org/css-syntax-3/#whitespace

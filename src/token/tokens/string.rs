@@ -245,13 +245,9 @@ mod alloc {
 
                 let mut res = String::with_capacity(self.value_original_str.len());
 
-                loop {
-                    if let Some((ch, new_chars)) = chars.into_next() {
-                        chars = new_chars;
-                        res.push(ch);
-                    } else {
-                        break;
-                    }
+                while let Some((ch, new_chars)) = chars.into_next() {
+                    chars = new_chars;
+                    res.push(ch);
                 }
 
                 Cow::Owned(res)
@@ -278,7 +274,7 @@ mod tests {
         assert_eq!(s.full, "'\\\n'");
         assert_eq!(s.starting_code_point_str, "'");
         assert_eq!(s.value_original_str, "\\\n");
-        assert_eq!(s.has_filtered_chars_or_escaped_code_points, true);
+        assert!(s.has_filtered_chars_or_escaped_code_points);
         assert_eq!(s.ending_code_point_str, "'");
 
         assert_eq!(s.value_unescape(), "");

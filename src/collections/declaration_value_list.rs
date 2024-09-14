@@ -169,6 +169,7 @@ pub(crate) mod builder {
         };
     }
 
+    #[allow(clippy::large_enum_variant)]
     enum ValueList<'a> {
         Empty,
         NotEmpty {
@@ -262,6 +263,7 @@ pub(crate) mod builder {
                             value: v,
                         }
                     } else {
+                        //
                         if let Some(whitespace) = v.try_into_whitespace() {
                             return (
                                 None,
@@ -316,6 +318,7 @@ pub(crate) mod builder {
             }
         }
 
+        #[allow(clippy::result_large_err)]
         const fn pop_last_2_important(self) -> Result<(Important<'a>, ValueListPop2<'a>), Self> {
             match self {
                 ValueList::Empty => Err(self),

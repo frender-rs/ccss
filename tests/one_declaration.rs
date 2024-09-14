@@ -73,7 +73,7 @@ fn test_all() {
                 }
                 "invalid" => {
                     assert!(
-                        matches!(res, Err(_)),
+                        res.is_err(),
                         "Expect error declaration\nUnexpected: {res:?}\ninput: {input:?}"
                     )
                 }

@@ -122,7 +122,7 @@ pub enum TokenParseError<'a> {
 impl<'a> TokenParseError<'a> {
     pub(crate) const DUMMY: Self = Self::Url(UrlParseError::Eof);
 
-    pub(crate) const fn to_message(self) -> &'static str {
+    pub(crate) const fn to_message(&self) -> &'static str {
         match self {
             TokenParseError::StringToken(err) => err.to_message(),
             TokenParseError::Url(err) => err.to_message(),

@@ -323,7 +323,7 @@ mod buffered_token_stream {
 
                         Ok((Some(token), self))
                     }
-                    Err(err) => return Err(err),
+                    Err(err) => Err(err),
                 }
             }
         }

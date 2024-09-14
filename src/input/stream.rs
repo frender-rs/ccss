@@ -120,7 +120,7 @@ impl Filtered<'_> {
             };
             Some((FilteredChar(u), Self(this)))
         } else {
-            return None;
+            None
         }
     }
 
@@ -149,7 +149,7 @@ impl Filtered<'_> {
             };
             Some((FilteredChar(u), is_filtered, Self(this)))
         } else {
-            return None;
+            None
         }
     }
 

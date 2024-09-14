@@ -110,7 +110,7 @@ impl<'a> Function<'a> {
                             ));
                         } else {
                             match ComponentValue::try_consume_one(TokenAndRemaining {
-                                token: token,
+                                token,
                                 remaining: input,
                                 full: before_token,
                             }) {
@@ -595,6 +595,7 @@ pub(crate) enum StopTokenKind<StopToken: StopTokenConfig> {
 
 impl<StopToken: StopTokenConfig> StopTokenKind<StopToken> {
     const fn test(&self, token: &Token<'_>) -> bool {
+        #[allow(clippy::match_like_matches_macro)] // for rustfmt
         match (self, token) {
             (Self::Comma(_), Token::Simple(SimpleToken::Comma(_)))
             | (Self::Semicolon(_), Token::Simple(SimpleToken::Semicolon(_))) => true,
@@ -602,7 +603,7 @@ impl<StopToken: StopTokenConfig> StopTokenKind<StopToken> {
         }
     }
 
-    const fn check<'a>(self, token: Token<'a>) -> Option<StopTokenWithConfig<'a, StopToken>> {
+    const fn check(self, token: Token<'_>) -> Option<StopTokenWithConfig<'_, StopToken>> {
         match (self, token) {
             (Self::Comma(m), Token::Simple(SimpleToken::Comma(t))) => {
                 Some(StopTokenWithConfig::Comma(t, m))
