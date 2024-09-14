@@ -7,7 +7,7 @@ repository = "https://github.com/frender-rs/ccss"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-konst = { version = "0.3.9", features = ["iter"] }
+konst = { version = "0.3.9", features = ["iter"], default-features = false }
 
 [dev-dependencies]
 serde = { version = "1.0.204", features = ["derive"] }
